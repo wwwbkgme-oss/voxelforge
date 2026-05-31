@@ -1,0 +1,43 @@
+# Build artifacts
+engine/Build/
+engine/voxelforge
+engine/*.o
+engine/*.log
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+ENV/
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Generated assets (large — do not commit, mount as Docker volume or gitignore)
+generated_assets/
+examples/output/
+*.vox.bak
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+*.log
+voxelforge.log
+
+# Test
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Secrets
+.env
