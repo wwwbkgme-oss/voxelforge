@@ -157,6 +157,42 @@ class WorldBuildRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Game generation request
+# ---------------------------------------------------------------------------
+
+class GameGenreEnum(str, Enum):
+    village = "village"
+    dungeon = "dungeon"
+    space   = "space"
+    fantasy = "fantasy"
+    horror  = "horror"
+    arctic  = "arctic"
+
+
+class GameGenerateRequest(BaseModel):
+    title:        str  = Field("VoxelForge Game", description="Game title")
+    genre:        GameGenreEnum = GameGenreEnum.village
+    theme:        str  = Field("", description="Optional sub-theme override")
+    player_class: str  = Field("warrior", description="warrior | mage | archer | rogue")
+    enemies:      int  = Field(3,  ge=0, le=10)
+    props:        int  = Field(6,  ge=0, le=20)
+    level_size:   int  = Field(48, ge=16, le=96)
+    seed:         int  = Field(0)
+
+
+class GameGenerateResponse(BaseModel):
+    status:        str
+    title:         str
+    genre:         str
+    scene_path:    str
+    manifest_path: str
+    run_command:   str
+    entity_count:  int
+    asset_count:   int
+    script_count:  int
+
+
+# ---------------------------------------------------------------------------
 # Agent request
 # ---------------------------------------------------------------------------
 

@@ -51,6 +51,8 @@ from .models import (
     CharacterRequest,
     DungeonRequest,
     ErrorResponse,
+    GameGenerateRequest,
+    GameGenerateResponse,
     PropRequest,
     SceneBuildRequest,
     SceneResponse,
@@ -493,6 +495,50 @@ async def build_world(req: WorldBuildRequest) -> WorldResponse:
     except Exception as exc:
         tb = traceback.format_exc()
         raise HTTPException(status_code=500, detail=f"{exc}\n{tb}") from exc
+
+
+# ---------------------------------------------------------------------------
+# Game generator endpoint
+# ---------------------------------------------------------------------------
+
+@app.post("/game/generate", response_model=GameGenerateResponse, tags=["game"])
+async def generate_game(req: GameGenerateRequest) -> GameGenerateResponse:
+    """
+    Generate a **complete, playable mini-game** in one API call.
+
+    Creates all voxel assets (level/terrain, player, enemies, props),
+    Lua game scripts (player controller, enemy AI, objective system),
+    and a scene file that ties everything together.
+
+    The result is immediately playable with:
+        ``cd engine && ./voxelforge --scene ../<scene_path>``
+    """
+    try:
+        from ..generators.game import GameGenerator
+        gen      = GameGenerator(_palette(), seed=req.seed,
+                                  output_dir=ASSETS_DIR)
+        manifest = gen.generate(
+            title        = req.title,
+            genre        = req.genre.value,
+            theme        = req.theme,
+            player_class = req.player_class,
+            enemies      = req.enemies,
+            props        = req.props,
+            level_size   = req.level_size,
+        )
+        return GameGenerateResponse(
+            status        = "ok",
+            title         = req.title,
+            genre         = req.genre.value,
+            scene_path    = _engine_rel(manifest["scene_path"]),
+            manifest_path = _engine_rel(manifest["manifest_path"]),
+            run_command   = manifest["run_command"],
+            entity_count  = manifest["entity_count"],
+            asset_count   = len(manifest["assets"]),
+            script_count  = len(manifest["scripts"]),
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 # ---------------------------------------------------------------------------

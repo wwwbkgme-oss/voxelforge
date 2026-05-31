@@ -16,3 +16,4 @@ from .buildings import BuildingGenerator   # noqa: F401
 from .characters import CharacterGenerator  # noqa: F401
 from .props      import PropGenerator       # noqa: F401
 from .dungeon    import DungeonGenerator    # noqa: F401
+from .game       import GameGenerator       # noqa: F401
