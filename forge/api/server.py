@@ -47,15 +47,26 @@ from .models import (
     AgentRunResponse,
     AssetListResponse,
     AssetResponse,
+    BatchSpriteRequest,
     BuildingRequest,
     CharacterRequest,
     DungeonRequest,
     ErrorResponse,
     GameGenerateRequest,
     GameGenerateResponse,
+    NarrativeMessageRequest,
+    NarrativeMessageResponse,
+    NarrativeSessionRequest,
+    NarrativeSessionResponse,
+    PipelineRequest,
+    PipelineResponse,
+    ProjectInitRequest,
+    ProjectStatusResponse,
     PropRequest,
     SceneBuildRequest,
     SceneResponse,
+    SpriteGenerateRequest,
+    SpriteGenerateResponse,
     TerrainRequest,
     WorldBuildRequest,
     WorldResponse,
@@ -501,6 +512,310 @@ async def build_world(req: WorldBuildRequest) -> WorldResponse:
     except Exception as exc:
         tb = traceback.format_exc()
         raise HTTPException(status_code=500, detail=f"{exc}\n{tb}") from exc
+
+
+# ---------------------------------------------------------------------------
+# Image / Sprite generation  (acatovic/ai-game-studio pattern)
+# ---------------------------------------------------------------------------
+
+@app.post("/sprite/generate", response_model=SpriteGenerateResponse, tags=["sprites"])
+async def generate_sprite(req: SpriteGenerateRequest) -> SpriteGenerateResponse:
+    """
+    Generate an AI sprite from a text prompt.
+
+    Uses OpenRouter (Grok Imagine, FLUX, DALL-E) when OPENROUTER_API_KEY or
+    OPENAI_API_KEY is set.  Falls back to procedural pixel art without an API key.
+    Chroma-key (#00b140) background removal is applied automatically.
+    """
+    try:
+        from ..imagegen import SpriteGenerator
+        gen = SpriteGenerator(output_dir=os.path.join(ASSETS_DIR, "sprites"))
+
+        if req.animated:
+            result = gen.generate_animated(
+                prompt      = req.prompt,
+                name        = req.name,
+                style_hint  = req.style,
+                frame_count = req.frames,
+            )
+            return SpriteGenerateResponse(
+                status      = "ok",
+                name        = req.name,
+                image_path  = _engine_rel(result.spritesheet),
+                image_b64   = "",
+                model_used  = result.model_used,
+                width       = 0,
+                height      = 0,
+                has_alpha   = True,
+                source      = "ai",
+                spritesheet = _engine_rel(result.spritesheet),
+                gif_path    = _engine_rel(result.gif_path),
+                frame_count = result.frame_count,
+            )
+        else:
+            result = gen.generate(
+                prompt     = req.prompt,
+                name       = req.name,
+                size       = req.size,
+                remove_bg  = req.remove_bg,
+                style_hint = req.style,
+            )
+            return SpriteGenerateResponse(
+                status     = "ok",
+                name       = req.name,
+                image_path = _engine_rel(result.image_path),
+                image_b64  = result.image_b64,
+                model_used = result.model_used,
+                width      = result.width,
+                height     = result.height,
+                has_alpha  = result.has_alpha,
+                source     = result.source,
+                frame_count= 1,
+            )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/sprite/batch", tags=["sprites"])
+async def generate_sprite_batch(req: BatchSpriteRequest) -> Dict[str, Any]:
+    """Generate multiple sprites from a list of prompts."""
+    try:
+        from ..imagegen import SpriteGenerator
+        gen     = SpriteGenerator(output_dir=os.path.join(ASSETS_DIR, "sprites"))
+        results = gen.generate_batch(req.prompts, names=req.names, remove_bg=req.remove_bg)
+        return {
+            "status": "ok",
+            "count":  len(results),
+            "sprites": [
+                {"name": r.image_path, "model": r.model_used, "source": r.source}
+                for r in results
+            ],
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/sprite/remove-bg", tags=["sprites"])
+async def remove_background(path: str) -> Dict[str, Any]:
+    """Apply chroma-key background removal to an existing image."""
+    try:
+        from ..imagegen import remove_background as _rb
+        full = os.path.abspath(path)
+        if not os.path.isfile(full):
+            raise HTTPException(status_code=404, detail=f"File not found: {path}")
+        out = _rb(full)
+        return {"status": "ok", "path": _engine_rel(out)}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+# ---------------------------------------------------------------------------
+# Narrative Engine  (ackness/ai-gamestudio pattern)
+# ---------------------------------------------------------------------------
+
+_narrative_engines: Dict[str, Any] = {}   # session_id → NarrativeEngine
+
+def _get_narrative_engine(api_key: str = "", model: str = "") -> Any:
+    from ..narrative import NarrativeEngine
+    return NarrativeEngine(
+        llm_model   = model or os.environ.get("LLM_MODEL", "gpt-4o-mini"),
+        llm_api_key = api_key or os.environ.get("LLM_API_KEY", "")
+                              or os.environ.get("OPENAI_API_KEY", ""),
+        db_path     = os.path.join(ASSETS_DIR, "narrative.db"),
+    )
+
+
+@app.post("/narrative/session", response_model=NarrativeSessionResponse, tags=["narrative"])
+async def start_narrative_session(req: NarrativeSessionRequest) -> NarrativeSessionResponse:
+    """
+    Start a new LLM-driven interactive game session.
+
+    The narrative engine uses a dual-model architecture: a primary LLM for
+    storytelling and a plugin agent for game mechanics (combat, inventory, social).
+    Game state is persisted in SQLite.
+    """
+    try:
+        engine  = _get_narrative_engine(req.api_key, req.model)
+        session = engine.start_session(
+            player_name = req.player_name,
+            genre       = req.genre,
+            world_text  = req.world_text or "",
+        )
+        return NarrativeSessionResponse(
+            status     = "ok",
+            session_id = session.id,
+            genre      = session.genre,
+            player     = session.player_name,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/narrative/chat", response_model=NarrativeMessageResponse, tags=["narrative"])
+async def narrative_chat(req: NarrativeMessageRequest) -> NarrativeMessageResponse:
+    """
+    Send a player message and receive narrative response with game mechanics.
+
+    Returns structured blocks: narrative text, choices, combat results, items, etc.
+    """
+    try:
+        engine   = _get_narrative_engine()
+        response = engine.send_message(req.session_id, req.message)
+        session  = engine.get_session_status(req.session_id)
+        return NarrativeMessageResponse(
+            status     = "ok",
+            session_id = req.session_id,
+            turn_id    = response.turn_id,
+            blocks     = [b.to_dict() for b in response.blocks],
+            text       = response.text(),
+            choices    = response.choices(),
+            hp         = session.get("hp", 100),
+            score      = session.get("score", 0),
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/narrative/sessions", tags=["narrative"])
+async def list_narrative_sessions() -> Dict[str, Any]:
+    """List all active narrative game sessions."""
+    try:
+        engine = _get_narrative_engine()
+        return {"status": "ok", "sessions": engine.list_sessions()}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/narrative/status/{session_id}", tags=["narrative"])
+async def narrative_session_status(session_id: str) -> Dict[str, Any]:
+    """Get current status of a narrative session (HP, score, inventory, etc.)."""
+    try:
+        engine = _get_narrative_engine()
+        return {"status": "ok", **engine.get_session_status(session_id)}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+# ---------------------------------------------------------------------------
+# 12-Agent Pipeline  (pamirtuna/gamestudio-subagents pattern)
+# ---------------------------------------------------------------------------
+
+@app.post("/pipeline/run", response_model=PipelineResponse, tags=["pipeline"])
+async def run_pipeline(req: PipelineRequest) -> PipelineResponse:
+    """
+    Run the full 12-agent game development pipeline.
+
+    Phases:
+    1. Market Validation — LLM market analyst gives Go/No-Go
+    2. Design — GDD, pillars, milestones, analytics plan
+    3. Build — VoxelForge game generation (if build_game=true)
+    4. QA — Test plan, asset validation
+
+    Works with or without an LLM API key (template fallbacks when no key is set).
+    """
+    try:
+        from ..pipeline import GamePipeline
+        pipeline = GamePipeline(output_dir=os.path.join(ASSETS_DIR, "pipeline_projects"))
+        result   = pipeline.run(
+            concept    = req.concept,
+            genre      = req.genre,
+            platform   = req.platform,
+            audience   = req.audience,
+            mode       = req.mode,
+            timeline   = req.timeline,
+            competitors= req.competitors,
+            usp        = req.usp,
+            seed       = req.seed,
+            build_game = req.build_game,
+        )
+        return PipelineResponse(
+            status                 = "ok",
+            concept                = result.concept,
+            mode                   = result.mode,
+            agents_used            = len(result.agents),
+            market_recommendation  = result.market.recommendation if result.market else None,
+            market_score           = result.market.opportunity_score if result.market else None,
+            gdd_path               = result.design.gdd_path if result.design else None,
+            build_path             = result.build.scene_path if result.build else None,
+            run_command            = result.build.run_command if result.build else None,
+            qa_passed              = result.qa.passed if result.qa else None,
+            elapsed_s              = result.elapsed_s,
+            project_dir            = result.project_dir,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+# ---------------------------------------------------------------------------
+# Project lifecycle  (full project management)
+# ---------------------------------------------------------------------------
+
+@app.post("/project/init", response_model=ProjectStatusResponse, tags=["project"])
+async def init_project(req: ProjectInitRequest) -> ProjectStatusResponse:
+    """
+    Initialize a new game project with full folder structure and agent config.
+
+    Creates project directories, GDD, market research scaffolding,
+    timeline, engine-specific files, and CLAUDE.md agent configuration.
+    Supports: voxelforge | godot | unity | unreal
+    """
+    try:
+        from ..project import ProjectManager
+        pm   = ProjectManager(os.path.join(ASSETS_DIR, "projects"))
+        proj = pm.init_project(
+            name              = req.name,
+            concept           = req.concept,
+            genre             = req.genre,
+            platform          = req.platform,
+            audience          = req.audience,
+            engine            = req.engine,
+            mode              = req.mode,
+            timeline          = req.timeline,
+            usp               = req.usp,
+            competitors       = req.competitors,
+            development_rules = req.development_rules,
+        )
+        return ProjectStatusResponse(
+            status  = "ok",
+            project = {
+                "name":    proj.config.name,
+                "slug":    proj.config.slug,
+                "path":    proj.path,
+                "engine":  proj.config.engine,
+                "agents":  len(proj.config.active_agents),
+                "milestone": proj.next_milestone(),
+            },
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/project/list", tags=["project"])
+async def list_projects() -> Dict[str, Any]:
+    """List all initialized projects."""
+    try:
+        from ..project import ProjectManager
+        pm = ProjectManager(os.path.join(ASSETS_DIR, "projects"))
+        return {"status": "ok", "projects": pm.list_projects()}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/project/{slug}", tags=["project"])
+async def get_project(slug: str) -> Dict[str, Any]:
+    """Get project details by slug."""
+    try:
+        from ..project import ProjectManager
+        pm   = ProjectManager(os.path.join(ASSETS_DIR, "projects"))
+        proj = pm.load_project(slug)
+        return {
+            "status":  "ok",
+            "summary": proj.status_summary(),
+            "config":  proj.config.to_json_dict(),
+            "next_milestone": proj.next_milestone(),
+        }
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
 
 
 # ---------------------------------------------------------------------------

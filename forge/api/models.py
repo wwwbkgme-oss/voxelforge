@@ -157,6 +157,131 @@ class WorldBuildRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Image generation requests (from acatovic/ai-game-studio pattern)
+# ---------------------------------------------------------------------------
+
+class SpriteGenerateRequest(BaseModel):
+    prompt:    str   = Field(..., description="Text description of the sprite")
+    name:      str   = Field("sprite", description="Output filename stem")
+    size:      int   = Field(512, ge=64, le=1024, description="Image size in pixels")
+    remove_bg: bool  = Field(True, description="Apply chroma-key background removal")
+    style:     str   = Field("pixel art isometric game sprite", description="Style hint")
+    animated:  bool  = Field(False, description="Generate animated spritesheet")
+    frames:    int   = Field(8, ge=2, le=32, description="Animation frame count (animated only)")
+
+
+class SpriteGenerateResponse(BaseModel):
+    status:       str
+    name:         str
+    image_path:   str
+    image_b64:    str = Field("", description="Base64 PNG (omitted if animated)")
+    model_used:   str
+    width:        int
+    height:       int
+    has_alpha:    bool
+    source:       str
+    spritesheet:  Optional[str] = None
+    gif_path:     Optional[str] = None
+    frame_count:  int = 1
+
+
+class BatchSpriteRequest(BaseModel):
+    prompts:    List[str] = Field(..., description="List of sprite prompts")
+    names:      Optional[List[str]] = Field(None)
+    remove_bg:  bool = Field(True)
+
+
+# ---------------------------------------------------------------------------
+# Narrative engine requests
+# ---------------------------------------------------------------------------
+
+class NarrativeSessionRequest(BaseModel):
+    player_name: str  = Field(..., description="Player character name")
+    genre:       str  = Field("dungeon", description="Game genre")
+    world_text:  str  = Field("", description="World lore / setting description")
+    model:       str  = Field("", description="LLM model override")
+    api_key:     str  = Field("", description="LLM API key override")
+
+
+class NarrativeSessionResponse(BaseModel):
+    status:     str
+    session_id: str
+    genre:      str
+    player:     str
+
+
+class NarrativeMessageRequest(BaseModel):
+    session_id: str   = Field(..., description="Session ID from start_session")
+    message:    str   = Field(..., description="Player input/action")
+
+
+class NarrativeMessageResponse(BaseModel):
+    status:     str
+    session_id: str
+    turn_id:    str
+    blocks:     List[Dict[str, Any]]
+    text:       str
+    choices:    List[str]
+    hp:         int = 100
+    score:      int = 0
+
+
+# ---------------------------------------------------------------------------
+# Pipeline requests
+# ---------------------------------------------------------------------------
+
+class PipelineRequest(BaseModel):
+    concept:      str   = Field(..., description="One-sentence game concept")
+    genre:        str   = Field("dungeon")
+    platform:     str   = Field("PC")
+    audience:     str   = Field("core")
+    mode:         str   = Field("design", description="design | prototype | development")
+    timeline:     str   = Field("Short", description="Rapid | Short | Medium | Long")
+    competitors:  List[str] = Field(default_factory=list)
+    usp:          str   = Field("", description="Unique selling proposition")
+    build_game:   bool  = Field(False, description="Run Build phase (generates VoxelForge game)")
+    seed:         int   = Field(42)
+
+
+class PipelineResponse(BaseModel):
+    status:      str
+    concept:     str
+    mode:        str
+    agents_used: int
+    market_recommendation: Optional[str] = None
+    market_score:          Optional[int] = None
+    gdd_path:    Optional[str] = None
+    build_path:  Optional[str] = None
+    run_command: Optional[str] = None
+    qa_passed:   Optional[bool] = None
+    elapsed_s:   float = 0.0
+    project_dir: str = ""
+
+
+# ---------------------------------------------------------------------------
+# Project lifecycle requests
+# ---------------------------------------------------------------------------
+
+class ProjectInitRequest(BaseModel):
+    name:               str   = Field(..., description="Project name")
+    concept:            str   = Field(..., description="One-sentence game concept")
+    genre:              str   = Field("dungeon")
+    platform:           str   = Field("PC")
+    audience:           str   = Field("core")
+    engine:             str   = Field("voxelforge", description="voxelforge | godot | unity | unreal")
+    mode:               str   = Field("development")
+    timeline:           str   = Field("Short")
+    usp:                str   = Field("")
+    competitors:        List[str] = Field(default_factory=list)
+    development_rules:  List[str] = Field(default_factory=list)
+
+
+class ProjectStatusResponse(BaseModel):
+    status:   str
+    project:  Dict[str, Any]
+
+
+# ---------------------------------------------------------------------------
 # Game generation request
 # ---------------------------------------------------------------------------
 

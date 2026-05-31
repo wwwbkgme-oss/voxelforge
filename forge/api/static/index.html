@@ -180,6 +180,100 @@
 
   </div>
 
+  <!-- ── New feature panels row ── -->
+  <div class="grid3" style="margin-bottom:1.5rem">
+
+    <!-- AI Sprite Generator -->
+    <div class="card">
+      <h2>🎨 AI Sprite Generator</h2>
+      <p style="font-size:.78rem;color:var(--muted);margin-bottom:.5rem">
+        Text → sprite via OpenRouter/DALL-E. Chroma-key BG removal. Animated spritesheets.
+      </p>
+      <label>Prompt</label>
+      <input id="sp-prompt" type="text" placeholder="pixel art warrior knight, isometric">
+      <label>Name</label>
+      <input id="sp-name" type="text" value="sprite_1">
+      <div style="display:flex;gap:.5rem;margin-top:.5rem">
+        <label style="margin:0;display:flex;align-items:center;gap:.3rem;cursor:pointer">
+          <input type="checkbox" id="sp-animated"> Animated
+        </label>
+        <label style="margin:0;display:flex;align-items:center;gap:.3rem;cursor:pointer">
+          <input type="checkbox" id="sp-remove-bg" checked> Remove BG
+        </label>
+      </div>
+      <button class="btn-primary" style="width:100%;margin-top:.75rem;justify-content:center" onclick="generateAiSprite(this)">
+        <span class="spinner"></span>
+        <span class="label">✨ Generate Sprite</span>
+      </button>
+      <div class="output" id="sprite-out">No API key? Uses procedural pixel art fallback.</div>
+      <div id="sprite-preview" style="margin-top:.5rem;text-align:center"></div>
+    </div>
+
+    <!-- Narrative Engine -->
+    <div class="card">
+      <h2>📖 Narrative Engine</h2>
+      <p style="font-size:.78rem;color:var(--muted);margin-bottom:.5rem">
+        LLM-driven interactive story. Dual-model: narrative + mechanics (combat/inventory).
+      </p>
+      <div id="narr-setup">
+        <label>Player Name</label>
+        <input id="narr-player" type="text" value="Hero">
+        <label>Genre</label>
+        <select id="narr-genre">
+          <option>dungeon</option><option>village</option><option>space</option>
+          <option>fantasy</option><option>horror</option><option>arctic</option>
+        </select>
+        <label>World Setting (optional)</label>
+        <input id="narr-world" type="text" placeholder="A dark ice dungeon...">
+        <button class="btn-green" style="width:100%;margin-top:.75rem" onclick="startNarrative(this)">
+          <span class="spinner"></span>
+          <span class="label">▶ Start Session</span>
+        </button>
+      </div>
+      <div id="narr-chat" style="display:none">
+        <div id="narr-log" style="max-height:130px;overflow-y:auto;font-size:.78rem;margin-bottom:.5rem;padding:.5rem;background:#080a10;border-radius:6px;border:1px solid #2a2d3a"></div>
+        <div style="display:flex;gap:.3rem">
+          <input id="narr-input" type="text" placeholder="What do you do?" style="flex:1">
+          <button class="btn-outline" style="margin:0;padding:.4rem .7rem" onclick="sendNarrative()">→</button>
+        </div>
+        <div id="narr-choices" style="margin-top:.4rem;display:flex;flex-wrap:wrap;gap:.3rem"></div>
+      </div>
+      <div id="narr-status" style="font-size:.7rem;color:var(--muted);margin-top:.3rem"></div>
+    </div>
+
+    <!-- 12-Agent Pipeline -->
+    <div class="card">
+      <h2>🤖 12-Agent Pipeline</h2>
+      <p style="font-size:.78rem;color:var(--muted);margin-bottom:.5rem">
+        Market analysis → GDD → Build → QA. Go/No-Go decision before a line of code.
+      </p>
+      <label>Game Concept</label>
+      <input id="pipe-concept" type="text" placeholder="A voxel dungeon crawler with ice crystals">
+      <label>Genre</label>
+      <select id="pipe-genre">
+        <option>dungeon</option><option>village</option><option>space</option>
+        <option>fantasy</option><option>horror</option><option>arctic</option>
+      </select>
+      <label>Mode</label>
+      <select id="pipe-mode">
+        <option>design</option><option>prototype</option><option>development</option>
+      </select>
+      <label>Competitors (comma separated)</label>
+      <input id="pipe-comp" type="text" placeholder="Spelunky, Rogue Legacy">
+      <div style="display:flex;gap:.5rem;margin-top:.5rem">
+        <label style="margin:0;display:flex;align-items:center;gap:.3rem;cursor:pointer">
+          <input type="checkbox" id="pipe-build"> Also build game
+        </label>
+      </div>
+      <button class="btn-primary" style="width:100%;margin-top:.75rem;justify-content:center" onclick="runPipeline(this)">
+        <span class="spinner"></span>
+        <span class="label">🚀 Run Pipeline</span>
+      </button>
+      <div class="output" id="pipeline-out">Ready.</div>
+    </div>
+
+  </div>
+
   <!-- ── Demo Gallery ── -->
   <div class="card" style="margin-bottom:1.5rem">
     <h2>🖼️ AI-Generated Asset Gallery</h2>
@@ -532,6 +626,146 @@ async function loadAssets() {
        </div>`
     ).join('');
   } catch {}
+}
+
+// ── AI Sprite Generator ───────────────────────────────────────────────────
+
+async function generateAiSprite(btn) {
+  const prompt = document.getElementById('sp-prompt').value.trim();
+  if (!prompt) { alert('Enter a sprite prompt'); return; }
+  setLoading(btn, true);
+  setOut('sprite-out', '⏳ Generating sprite…');
+  document.getElementById('sprite-preview').innerHTML = '';
+  try {
+    const data = await api('POST', '/sprite/generate', {
+      prompt:     prompt,
+      name:       document.getElementById('sp-name').value,
+      animated:   document.getElementById('sp-animated').checked,
+      remove_bg:  document.getElementById('sp-remove-bg').checked,
+    });
+    setOut('sprite-out',
+      `✅ ${data.source === 'ai' ? 'AI-generated' : 'Procedural'} (${data.model_used})\n` +
+      `Size: ${data.width}×${data.height}  Alpha: ${data.has_alpha}\n` +
+      `Path: ${data.image_path}`);
+    // Show preview if base64 available
+    if (data.image_b64) {
+      document.getElementById('sprite-preview').innerHTML =
+        `<img src="data:image/png;base64,${data.image_b64}" style="max-width:100%;image-rendering:pixelated;border:1px solid #2a2d3a;border-radius:4px">`;
+    }
+    loadStats();
+  } catch(e) {
+    setOut('sprite-out', '❌ ' + e.message, true);
+  } finally {
+    setLoading(btn, false);
+  }
+}
+
+// ── Narrative Engine ──────────────────────────────────────────────────────
+
+let narrSessionId = null;
+
+async function startNarrative(btn) {
+  setLoading(btn, true);
+  try {
+    const data = await api('POST', '/narrative/session', {
+      player_name: document.getElementById('narr-player').value,
+      genre:       document.getElementById('narr-genre').value,
+      world_text:  document.getElementById('narr-world').value,
+    });
+    narrSessionId = data.session_id;
+    document.getElementById('narr-setup').style.display = 'none';
+    document.getElementById('narr-chat').style.display  = '';
+    document.getElementById('narr-status').textContent =
+      `Session ${data.session_id.slice(0,8)} | ${data.genre} | ${data.player}`;
+    appendNarrLog('system', `Session started as ${data.player} in ${data.genre} world.`);
+  } catch(e) {
+    alert('Failed to start session: ' + e.message);
+  } finally {
+    setLoading(btn, false);
+  }
+}
+
+async function sendNarrative() {
+  const input = document.getElementById('narr-input');
+  const msg   = input.value.trim();
+  if (!msg || !narrSessionId) return;
+  input.value = '';
+  appendNarrLog('you', msg);
+  document.getElementById('narr-choices').innerHTML = '';
+  try {
+    const data = await api('POST', '/narrative/chat', { session_id: narrSessionId, message: msg });
+    if (data.text) appendNarrLog('narrator', data.text);
+    // Show combat/item blocks
+    for (const b of data.blocks || []) {
+      if (b.type === 'combat')    appendNarrLog('combat', b.data.result || '⚔️ Combat!');
+      if (b.type === 'item')      appendNarrLog('item',   `${b.data.action}: ${b.data.item}`);
+      if (b.type === 'game_over') appendNarrLog('system', b.data.won ? '🏆 YOU WIN!' : '💀 GAME OVER');
+    }
+    if (data.choices?.length) {
+      const div = document.getElementById('narr-choices');
+      data.choices.forEach(c => {
+        const btn2 = document.createElement('button');
+        btn2.className = 'btn-outline';
+        btn2.style.cssText = 'margin:0;padding:.2rem .5rem;font-size:.72rem';
+        btn2.textContent = c;
+        btn2.onclick = () => { document.getElementById('narr-input').value = c; sendNarrative(); };
+        div.appendChild(btn2);
+      });
+    }
+    document.getElementById('narr-status').textContent =
+      `HP: ${data.hp}/100  Score: ${data.score}`;
+  } catch(e) {
+    appendNarrLog('error', e.message);
+  }
+}
+
+function appendNarrLog(role, text) {
+  const log  = document.getElementById('narr-log');
+  const colors = { you:'#86efac', narrator:'#e2e8f0', combat:'#f87171', item:'#fbbf24',
+                    system:'#a5b4fc', error:'#f87171' };
+  const line = document.createElement('div');
+  line.style.cssText = `color:${colors[role]||'#e2e8f0'};margin-bottom:2px`;
+  line.textContent = `${role.toUpperCase()}: ${text}`;
+  log.appendChild(line);
+  log.scrollTop = log.scrollHeight;
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && document.activeElement.id === 'narr-input') sendNarrative();
+});
+
+// ── 12-Agent Pipeline ────────────────────────────────────────────────────
+
+async function runPipeline(btn) {
+  const concept = document.getElementById('pipe-concept').value.trim();
+  if (!concept) { alert('Enter a game concept'); return; }
+  setLoading(btn, true);
+  setOut('pipeline-out', '⏳ Running 12-agent pipeline…');
+  try {
+    const comps = document.getElementById('pipe-comp').value.split(',').map(s=>s.trim()).filter(Boolean);
+    const data  = await api('POST', '/pipeline/run', {
+      concept:     concept,
+      genre:       document.getElementById('pipe-genre').value,
+      mode:        document.getElementById('pipe-mode').value,
+      competitors: comps,
+      build_game:  document.getElementById('pipe-build').checked,
+    });
+    const rec = data.market_recommendation || 'N/A';
+    const score = data.market_score != null ? ` (${data.market_score}/10)` : '';
+    setOut('pipeline-out',
+      `✅ Done in ${data.elapsed_s.toFixed(1)}s\n` +
+      `Agents:  ${data.agents_used}\n` +
+      `Market:  ${rec}${score}\n` +
+      (data.gdd_path   ? `GDD:     ${data.gdd_path}\n` : '') +
+      (data.build_path ? `Build:   ${data.build_path}\n` : '') +
+      (data.run_command? `Run:     ${data.run_command}\n` : '') +
+      `Project: ${data.project_dir}`
+    );
+  } catch(e) {
+    setOut('pipeline-out', '❌ ' + e.message, true);
+  } finally {
+    setLoading(btn, false);
+  }
 }
 
 // ── Gallery ───────────────────────────────────────────────────────────────

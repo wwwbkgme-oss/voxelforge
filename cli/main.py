@@ -260,6 +260,153 @@ def cmd_game(args: argparse.Namespace) -> None:
     print(f"\nRun: {manifest['run_command']}")
 
 
+def cmd_ai_sprite(args: argparse.Namespace) -> None:
+    """Generate AI sprite from text prompt."""
+    from forge.imagegen import SpriteGenerator
+    gen = SpriteGenerator(output_dir=args.output_dir)
+    if args.animated:
+        result = gen.generate_animated(
+            prompt      = args.prompt,
+            name        = args.name,
+            frame_count = args.frames,
+        )
+        print(f"Animated sprite saved:")
+        print(f"  Spritesheet : {result.spritesheet}")
+        print(f"  GIF         : {result.gif_path}")
+        print(f"  Frames      : {result.frame_count}")
+        print(f"  Model       : {result.model_used}")
+    else:
+        result = gen.generate(
+            prompt    = args.prompt,
+            name      = args.name,
+            remove_bg = not args.no_bg,
+        )
+        print(f"Sprite saved: {result.image_path}")
+        print(f"  Size   : {result.width}×{result.height}")
+        print(f"  Model  : {result.model_used}")
+        print(f"  Source : {result.source}")
+        print(f"  Alpha  : {result.has_alpha}")
+
+
+def cmd_narrative(args: argparse.Namespace) -> None:
+    """Interactive LLM narrative game session in the terminal."""
+    from forge.narrative import NarrativeEngine
+    import readline  # noqa: F401 — enables better terminal input
+
+    engine  = NarrativeEngine(db_path="generated_assets/narrative.db")
+    session_id = getattr(args, "session", None)
+
+    if session_id:
+        status = engine.get_session_status(session_id)
+        if "error" in status:
+            print(f"Session not found: {session_id}")
+            return
+        print(f"Resuming session {session_id[:8]}...")
+    else:
+        session = engine.start_session(
+            player_name = args.player_name,
+            genre       = args.genre,
+        )
+        session_id = session.id
+        print(f"\nWelcome, {args.player_name}! Session: {session_id[:8]}")
+        print(f"Genre: {args.genre}  |  Type 'quit' to exit\n")
+
+    print("="*60)
+    while True:
+        try:
+            user_input = input("\nYou: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\nGame ended.")
+            break
+        if not user_input or user_input.lower() in ("quit", "exit", "q"):
+            break
+
+        response = engine.send_message(session_id, user_input)
+        print()
+        text = response.text()
+        if text:
+            print(text)
+        for block in response.blocks:
+            if block.type == "combat":
+                print(f"\n⚔️  {block.data.get('result', '')}")
+            elif block.type == "item":
+                print(f"\n🎒 {block.data.get('action','').title()}: {block.data.get('item','')}")
+            elif block.type == "game_over":
+                won = block.data.get("won", False)
+                msg = block.data.get("message", "")
+                print(f"\n{'🏆 YOU WIN!' if won else '💀 GAME OVER'} {msg}")
+                return
+        choices = response.choices()
+        if choices:
+            print("\nOptions:")
+            for i, c in enumerate(choices, 1):
+                print(f"  {i}. {c}")
+
+    status = engine.get_session_status(session_id)
+    print(f"\nSession ended. Score: {status.get('score', 0)}  HP: {status.get('hp', 0)}")
+
+
+def cmd_pipeline(args: argparse.Namespace) -> None:
+    """Run the 12-agent game development pipeline."""
+    from forge.pipeline import GamePipeline
+    competitors = [c.strip() for c in args.competitors.split(",") if c.strip()]
+    pipeline    = GamePipeline(output_dir=args.output_dir)
+    result      = pipeline.run(
+        concept    = args.concept,
+        genre      = args.genre,
+        mode       = args.mode,
+        timeline   = args.timeline,
+        competitors= competitors,
+        build_game = args.build,
+    )
+    d = result.to_dict()
+    print(f"\nPipeline complete — {result.elapsed_s:.1f}s")
+    print(f"  Agents:  {len(d['agents'])}")
+    if d.get("market"):
+        print(f"  Market:  {d['market']['recommendation']} (score {d['market']['opportunity_score']}/10)")
+    if d.get("design"):
+        print(f"  GDD:     {d['design']['gdd_path']}")
+    if d.get("build"):
+        print(f"  Build:   {d['build']['scene_path']}")
+        print(f"\nRun: {d['build']['run_command']}")
+    print(f"  Project: {result.project_dir}")
+
+
+def cmd_project(args: argparse.Namespace) -> None:
+    """Project lifecycle management."""
+    from forge.project import ProjectManager
+    pm = ProjectManager("projects")
+
+    if args.proj_action == "init":
+        competitors = [c.strip() for c in args.competitors.split(",") if c.strip()]
+        proj = pm.init_project(
+            name        = args.name,
+            concept     = args.concept,
+            genre       = args.genre,
+            engine      = args.engine,
+            mode        = args.mode,
+            competitors = competitors,
+        )
+        print(proj.status_summary())
+        m = proj.next_milestone()
+        if m:
+            print(f"\nNext milestone: {m['name']} — {m['date']}")
+
+    elif args.proj_action == "list":
+        projects = pm.list_projects()
+        if not projects:
+            print("No projects found.")
+        for p in projects:
+            print(f"  {p['slug']:<30} {p['status']:<10} {p['genre']:<10} {p['engine']}")
+
+    elif args.proj_action == "status":
+        proj = pm.load_project(args.slug)
+        print(proj.status_summary())
+        m = proj.next_milestone()
+        if m:
+            print(f"\nNext milestone: {m['name']} — {m['date']}")
+
+
 def cmd_sprite(args: argparse.Namespace) -> None:
     """Render a .vox file to an isometric PNG sprite."""
     try:
@@ -405,6 +552,51 @@ def build_parser() -> argparse.ArgumentParser:
     p_sprite.add_argument("--tile-w",     dest="tile_w", type=int, default=8)
     p_sprite.add_argument("--tile-h",     dest="tile_h", type=int, default=4)
 
+    # --- ai-sprite --- AI-powered sprite generation
+    p_aisprite = sub.add_parser("ai-sprite", help="Generate AI sprite from text prompt")
+    p_aisprite.add_argument("prompt",      help="Text description of the sprite")
+    p_aisprite.add_argument("--name",      default="sprite")
+    p_aisprite.add_argument("--output-dir",dest="output_dir", default="generated_assets/sprites")
+    p_aisprite.add_argument("--animated",  action="store_true", help="Generate animated spritesheet")
+    p_aisprite.add_argument("--frames",    type=int, default=8)
+    p_aisprite.add_argument("--no-bg",     dest="no_bg", action="store_true",
+                            help="Skip background removal")
+
+    # --- narrative --- Interactive narrative game session
+    p_narr = sub.add_parser("narrative", help="Start interactive LLM narrative game")
+    p_narr.add_argument("--player",  default="Hero", dest="player_name")
+    p_narr.add_argument("--genre",   default="dungeon")
+    p_narr.add_argument("--session", default=None, help="Resume existing session ID")
+
+    # --- pipeline --- 12-agent game development pipeline
+    p_pipe = sub.add_parser("pipeline", help="Run 12-agent game development pipeline")
+    p_pipe.add_argument("concept",   help="One-sentence game concept")
+    p_pipe.add_argument("--genre",   default="dungeon")
+    p_pipe.add_argument("--mode",    default="design",
+                        choices=["design","prototype","development"])
+    p_pipe.add_argument("--timeline",default="Short")
+    p_pipe.add_argument("--competitors", default="", help="Comma-separated competitor names")
+    p_pipe.add_argument("--build",   action="store_true", help="Also build VoxelForge game")
+    p_pipe.add_argument("--output-dir", dest="output_dir", default="projects")
+
+    # --- project --- Project lifecycle management
+    p_proj = sub.add_parser("project", help="Project lifecycle management")
+    proj_sub = p_proj.add_subparsers(dest="proj_action", required=True)
+
+    p_proj_init = proj_sub.add_parser("init", help="Initialize a new project")
+    p_proj_init.add_argument("name")
+    p_proj_init.add_argument("concept")
+    p_proj_init.add_argument("--genre",   default="dungeon")
+    p_proj_init.add_argument("--engine",  default="voxelforge",
+                             choices=["voxelforge","godot","unity","unreal"])
+    p_proj_init.add_argument("--mode",    default="development")
+    p_proj_init.add_argument("--competitors", default="")
+
+    proj_sub.add_parser("list", help="List all projects")
+
+    p_proj_status = proj_sub.add_parser("status", help="Show project status")
+    p_proj_status.add_argument("slug")
+
     return parser
 
 
@@ -424,6 +616,10 @@ def main() -> None:
         "adr":        cmd_adr,
         "lore":       cmd_lore,
         "sprite":     cmd_sprite,
+        "ai-sprite":  cmd_ai_sprite,
+        "narrative":  cmd_narrative,
+        "pipeline":   cmd_pipeline,
+        "project":    cmd_project,
     }
     dispatch[args.command](args)
 
