@@ -52,9 +52,24 @@ class PropTypeEnum(str, Enum):
     mushroom  = "mushroom"
 
 
+class DungeonStyleEnum(str, Enum):
+    stone   = "stone"
+    dungeon = "dungeon"
+    cave    = "cave"
+    ice     = "ice"
+
+
 # ---------------------------------------------------------------------------
 # Asset generation requests
 # ---------------------------------------------------------------------------
+
+class DungeonRequest(BaseModel):
+    width:       int   = Field(48, ge=16, le=128)
+    height:      int   = Field(48, ge=16, le=128)
+    wall_height: int   = Field(3,  ge=1,  le=8)
+    style:       DungeonStyleEnum = DungeonStyleEnum.stone
+    seed:        int   = Field(0)
+    name:        str   = Field("dungeon")
 
 class TerrainRequest(BaseModel):
     width:    int   = Field(32, ge=4, le=128, description="Terrain X footprint in voxels")

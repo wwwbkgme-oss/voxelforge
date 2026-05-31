@@ -38,6 +38,7 @@ from ..scene import Scene
 from ..generators import (
     BuildingGenerator,
     CharacterGenerator,
+    DungeonGenerator,
     PropGenerator,
     TerrainGenerator,
 )
@@ -46,6 +47,7 @@ from .models import (
     AssetResponse,
     BuildingRequest,
     CharacterRequest,
+    DungeonRequest,
     ErrorResponse,
     PropRequest,
     SceneBuildRequest,
@@ -239,6 +241,35 @@ async def generate_prop(req: PropRequest) -> AssetResponse:
         return AssetResponse(
             status      = "ok",
             name        = name,
+            path        = _engine_rel(path),
+            voxel_count = model.voxel_count(),
+            dimensions  = (model.width, model.height, model.depth),
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+# ---------------------------------------------------------------------------
+# Asset: Dungeon
+# ---------------------------------------------------------------------------
+
+@app.post("/asset/dungeon", response_model=AssetResponse, tags=["assets"])
+async def generate_dungeon(req: DungeonRequest) -> AssetResponse:
+    """Generate a BSP dungeon / cave level as a .vox file."""
+    try:
+        gen   = DungeonGenerator(_palette(), seed=req.seed)
+        model = gen.generate(
+            width       = req.width,
+            height      = req.height,
+            wall_height = req.wall_height,
+            style       = req.style.value,
+        )
+        model.name = req.name
+        path = _asset_path("dungeons", req.name)
+        model.save(path)
+        return AssetResponse(
+            status      = "ok",
+            name        = req.name,
             path        = _engine_rel(path),
             voxel_count = model.voxel_count(),
             dimensions  = (model.width, model.height, model.depth),

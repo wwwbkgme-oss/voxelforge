@@ -1,0 +1,68 @@
+name: VoxelForge CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Python Tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run tests
+        run: pytest tests/ -v --tb=short
+
+      - name: Smoke-test generators
+        run: |
+          python3 - <<'EOF'
+          from forge.generators import TerrainGenerator, BuildingGenerator, CharacterGenerator, PropGenerator
+          from forge.voxel import Palette
+          from forge.scene import Scene
+          pal = Palette.natural()
+          t = TerrainGenerator(pal, seed=0).generate(8, 8, 4, biome="grassland")
+          assert t.voxel_count() > 0
+          b = BuildingGenerator(pal, seed=1).generate(6, 6, 2, style="medieval")
+          assert b.voxel_count() > 0
+          c = CharacterGenerator(pal, seed=2).generate()
+          assert c.voxel_count() > 0
+          p = PropGenerator(pal, seed=3).generate("tree")
+          assert p.voxel_count() > 0
+          s = Scene()
+          s.add_voxel_model("t", "test.vox")
+          assert s.entity_count == 1
+          print("All smoke tests passed")
+          EOF
+
+  lint:
+    name: Lint & Type-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install tools
+        run: pip install ruff pyright numpy fastapi pydantic requests
+      - name: Ruff lint
+        run: ruff check forge/ cli/ tests/ --ignore E501
+      - name: Pyright type check
+        run: pyright forge/ cli/
+        continue-on-error: true   # not blocking yet while stubs are incomplete
