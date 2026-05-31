@@ -27,10 +27,13 @@ from .generators import (  # noqa: F401
     DungeonGenerator,
     GameGenerator,
 )
-from .imagegen import SpriteGenerator, generate_sprite  # noqa: F401
-from .narrative import NarrativeEngine, create_engine   # noqa: F401
-from .pipeline  import GamePipeline                     # noqa: F401
-from .project   import ProjectManager                   # noqa: F401
+from .imagegen    import SpriteGenerator, generate_sprite        # noqa: F401
+from .narrative   import NarrativeEngine, create_engine          # noqa: F401
+from .pipeline    import GamePipeline                            # noqa: F401
+from .project     import ProjectManager                          # noqa: F401
+from .llm_router  import LLMRouter, llm, get_router              # noqa: F401
+from .spritesheet import SpriteSheetForge, GameStyle, AnimationAction  # noqa: F401
+from .gamegen     import HTML5GameGenerator, AssetPipeline       # noqa: F401
 
 __version__ = "1.0.0"
 __author__  = "VoxelForge"

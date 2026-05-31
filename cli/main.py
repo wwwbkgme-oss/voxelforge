@@ -407,6 +407,129 @@ def cmd_project(args: argparse.Namespace) -> None:
             print(f"\nNext milestone: {m['name']} — {m['date']}")
 
 
+def cmd_mcp(args: argparse.Namespace) -> None:
+    """Start the VoxelForge MCP server for Claude Code / OpenCode / Cline."""
+    from forge.mcp_server import main as mcp_main
+    transport = getattr(args, "transport", "stdio")
+    host      = getattr(args, "host", "0.0.0.0")
+    port      = getattr(args, "port", 3100)
+    verbose   = getattr(args, "verbose", False)
+    if transport == "sse":
+        print(f"VoxelForge MCP server (SSE) → http://{host}:{port}")
+        print(f"  Tools: 32  |  Add to Cursor: mcp://localhost:{port}/sse")
+    else:
+        print("VoxelForge MCP server (stdio) — ready for Claude Code / Cline", file=sys.stderr)
+    mcp_main(transport=transport, host=host, port=port, verbose=verbose)
+
+
+def cmd_llm(args: argparse.Namespace) -> None:
+    """Send a prompt to the best available free LLM provider."""
+    from forge.llm_router import LLMRouter, get_router
+    if getattr(args, "providers", False):
+        router = LLMRouter(verbose=True)
+        avail  = router.available_providers()
+        from forge.llm_router import _PROVIDERS
+        print(f"Available providers ({len(avail)}/{len(_PROVIDERS)}):")
+        for p in _PROVIDERS:
+            key   = bool(os.environ.get(p.env_key, ""))
+            mark  = "✓" if key else "✗"
+            print(f"  {mark} {p.name:<14} {p.free_note}")
+        return
+
+    if not args.prompt:
+        print("ERROR: provide a --prompt or use --providers to list providers")
+        sys.exit(1)
+
+    router = get_router(verbose=args.verbose)
+    resp   = router.chat(
+        prompt      = args.prompt,
+        system      = args.system or None,
+        task        = args.task,
+        provider    = args.provider or None,
+        max_tokens  = args.max_tokens,
+        temperature = args.temperature,
+    )
+    if resp.ok:
+        print(resp.text)
+        if args.verbose:
+            print(f"\n[{resp.provider} / {resp.model} — {resp.latency_ms}ms]", file=sys.stderr)
+    else:
+        print(f"ERROR: {resp.error}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_html_game(args: argparse.Namespace) -> None:
+    """Generate a complete HTML5 game from a text prompt."""
+    from forge.gamegen import HTML5GameGenerator
+    gen  = HTML5GameGenerator(output_dir=getattr(args, "output_dir", "generated_assets/games/html"))
+    game = gen.generate(
+        prompt    = args.prompt,
+        genre     = getattr(args, "genre", "auto"),
+        title     = getattr(args, "title", ""),
+        name      = getattr(args, "name", "game"),
+    )
+    print(f"HTML5 game: {game.html_path}")
+    print(f"  Title  : {game.title}")
+    print(f"  Genre  : {game.genre}")
+    print(f"  Valid  : {game.valid}")
+    print(f"  Source : {game.provider}")
+    print(f"  URL    : {game.open_url()}")
+    if game.issues:
+        print(f"  Issues : {', '.join(game.issues)}")
+
+
+def cmd_sprite_sheet(args: argparse.Namespace) -> None:
+    """Generate a character sprite sheet with animation frames."""
+    from forge.spritesheet import SpriteSheetForge, GameStyle, AnimationAction
+    forge_ss = SpriteSheetForge(
+        output_dir = getattr(args, "output_dir", "generated_assets/sprites"),
+        remove_bg  = not getattr(args, "no_bg", False),
+    )
+    style_str = getattr(args, "style", "pixel_art_rpg")
+    try:
+        style = GameStyle(style_str)
+    except ValueError:
+        style = GameStyle.PIXEL_ART_RPG
+
+    actions_str = getattr(args, "actions", "idle,walk,attack").split(",")
+    valid       = {e.value for e in AnimationAction}
+    actions     = [AnimationAction(a.strip()) for a in actions_str if a.strip() in valid]
+
+    result = forge_ss.generate_character_sheet(
+        description = args.description,
+        style       = style,
+        actions     = actions or [AnimationAction.IDLE],
+        name        = getattr(args, "name", "character"),
+    )
+    print(f"Sprite sheet: {result.spritesheet_path}")
+    print(f"  Frames : {result.frame_count}")
+    print(f"  Alpha  : {result.has_alpha}")
+    print(f"  Source : {result.source}")
+    if result.gif_path:
+        print(f"  GIF    : {result.gif_path}")
+
+
+def cmd_asset_pipeline(args: argparse.Namespace) -> None:
+    """Run the full narrative asset pipeline (storyline → quests → dialogue → items)."""
+    from forge.gamegen import AssetPipeline
+    pipeline = AssetPipeline(output_dir=getattr(args, "output_dir", "generated_assets/narrative_packs"))
+    pack     = pipeline.run(
+        theme   = args.theme,
+        details = getattr(args, "details", ""),
+        genre   = getattr(args, "genre", "dungeon"),
+    )
+    paths    = pack.save()
+    print(f"Asset pack: {pack.output_dir}")
+    print(f"  Files      : {len(paths)}")
+    print(f"  Characters : {len(pack.characters)}")
+    print(f"  Quests     : {len(pack.quests)}")
+    print(f"  Items      : {len(pack.items)}")
+    print(f"  Lua scripts: {list(pack.lua_scripts.keys())}")
+    print(f"  Provider   : {pack.provider}")
+    for name, path in paths.items():
+        print(f"    {name}: {path}")
+
+
 def cmd_sprite(args: argparse.Namespace) -> None:
     """Render a .vox file to an isometric PNG sprite."""
     try:
@@ -542,6 +665,53 @@ def build_parser() -> argparse.ArgumentParser:
                         choices=["village","dungeon","space","fantasy","horror","arctic"])
     p_lore.add_argument("--output", default=None)
 
+    # --- mcp ---
+    p_mcp = sub.add_parser("mcp", help="Start MCP server for Claude Code / OpenCode / Cline")
+    p_mcp.add_argument("--transport", default="stdio", choices=["stdio","sse"])
+    p_mcp.add_argument("--host",    default="0.0.0.0")
+    p_mcp.add_argument("--port",    type=int, default=3100)
+    p_mcp.add_argument("--verbose", action="store_true")
+
+    # --- llm ---
+    p_llm = sub.add_parser("llm", help="Chat with the best available free LLM provider")
+    p_llm.add_argument("prompt",       nargs="?", default="", help="Prompt to send")
+    p_llm.add_argument("--system",     default="", help="System prompt")
+    p_llm.add_argument("--task",       default="default",
+                        choices=["default","fast","code","creative","small"])
+    p_llm.add_argument("--provider",   default="", help="Force a specific provider")
+    p_llm.add_argument("--max-tokens", dest="max_tokens", type=int, default=2048)
+    p_llm.add_argument("--temperature",type=float, default=0.7)
+    p_llm.add_argument("--providers",  action="store_true", help="List all providers")
+    p_llm.add_argument("--verbose",    action="store_true")
+
+    # --- html-game ---
+    p_html = sub.add_parser("html-game", help="Generate a complete HTML5 game from text")
+    p_html.add_argument("prompt",       help="Game description")
+    p_html.add_argument("--genre",      default="auto")
+    p_html.add_argument("--title",      default="")
+    p_html.add_argument("--name",       default="game")
+    p_html.add_argument("--output-dir", dest="output_dir", default=None)
+
+    # --- sprite-sheet ---
+    p_ss = sub.add_parser("sprite-sheet", help="Generate character sprite sheet with animations")
+    p_ss.add_argument("description",  help="Character description")
+    p_ss.add_argument("--style",      default="pixel_art_rpg",
+                      help="stardew_valley|hollow_knight|genshin_impact|pixel_art_rpg|retro_8bit|...")
+    p_ss.add_argument("--actions",    default="idle,walk,attack",
+                      help="Comma-separated: idle,walk,run,jump,attack,cast,hurt,death")
+    p_ss.add_argument("--name",       default="character")
+    p_ss.add_argument("--output-dir", dest="output_dir", default=None)
+    p_ss.add_argument("--no-bg",      dest="no_bg", action="store_true",
+                      help="Skip background removal")
+
+    # --- asset-pipeline ---
+    p_ap = sub.add_parser("asset-pipeline",
+                          help="Narrative asset pipeline: storyline → quests → dialogue → items")
+    p_ap.add_argument("theme",         help="Game world theme (e.g. 'dark ice dungeon')")
+    p_ap.add_argument("--details",     default="")
+    p_ap.add_argument("--genre",       default="dungeon")
+    p_ap.add_argument("--output-dir",  dest="output_dir", default=None)
+
     # --- sprite ---
     p_sprite = sub.add_parser("sprite", help="Render .vox to isometric PNG sprite")
     p_sprite.add_argument("--input",      default=None, help=".vox file to render")
@@ -604,22 +774,27 @@ def main() -> None:
     parser = build_parser()
     args   = parser.parse_args()
     dispatch = {
-        "api":        cmd_api,
-        "generate":   cmd_generate,
-        "world":      cmd_world,
-        "agent":      cmd_agent,
-        "scene":      cmd_scene,
-        "game":       cmd_game,
-        "gdd":        cmd_gdd,
-        "brainstorm": cmd_brainstorm,
-        "mda":        cmd_mda,
-        "adr":        cmd_adr,
-        "lore":       cmd_lore,
-        "sprite":     cmd_sprite,
-        "ai-sprite":  cmd_ai_sprite,
-        "narrative":  cmd_narrative,
-        "pipeline":   cmd_pipeline,
-        "project":    cmd_project,
+        "api":            cmd_api,
+        "generate":       cmd_generate,
+        "world":          cmd_world,
+        "agent":          cmd_agent,
+        "scene":          cmd_scene,
+        "game":           cmd_game,
+        "gdd":            cmd_gdd,
+        "brainstorm":     cmd_brainstorm,
+        "mda":            cmd_mda,
+        "adr":            cmd_adr,
+        "lore":           cmd_lore,
+        "sprite":         cmd_sprite,
+        "ai-sprite":      cmd_ai_sprite,
+        "narrative":      cmd_narrative,
+        "pipeline":       cmd_pipeline,
+        "project":        cmd_project,
+        "mcp":            cmd_mcp,
+        "llm":            cmd_llm,
+        "html-game":      cmd_html_game,
+        "sprite-sheet":   cmd_sprite_sheet,
+        "asset-pipeline": cmd_asset_pipeline,
     }
     dispatch[args.command](args)
 

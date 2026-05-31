@@ -282,6 +282,99 @@ class ProjectStatusResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# HTML5 game + sprite sheet + asset pipeline requests
+# ---------------------------------------------------------------------------
+
+class HTML5GameRequest(BaseModel):
+    prompt:     str   = Field(..., description="Game description in plain English")
+    genre:      str   = Field("auto", description="auto|platformer|puzzle|rpg|shooter|arcade|dungeon|educational")
+    title:      str   = Field("", description="Game title (auto-generated if empty)")
+    name:       str   = Field("game", description="Output filename stem")
+    max_tokens: int   = Field(8192, ge=1024, le=16384)
+
+
+class HTML5GameResponse(BaseModel):
+    status:     str
+    title:      str
+    genre:      str
+    html_path:  str
+    open_url:   str
+    valid:      bool
+    provider:   str
+    model:      str
+    issues:     List[str]
+
+
+class SpriteSheetRequest(BaseModel):
+    description: str   = Field(..., description="Character or asset description")
+    style:       str   = Field("pixel_art_rpg",
+                                description="stardew_valley|hollow_knight|genshin_impact|fall_guys|pixel_art_rpg|breath_of_wild|retro_8bit|anime_cartoon|realistic_game|vector_art|isometric_voxel")
+    actions:     List[str] = Field(["idle","walk","attack"],
+                                   description="Animation actions to generate")
+    name:        str   = Field("character")
+
+
+class SpriteSheetResponse(BaseModel):
+    status:          str
+    spritesheet_path: str
+    frame_count:     int
+    gif_path:        Optional[str]
+    has_alpha:       bool
+    source:          str
+    style:           str
+
+
+class BatchSpriteSheetRequest(BaseModel):
+    prompts:   List[str] = Field(..., description="List of prop/item descriptions")
+    style:     str       = Field("pixel_art_rpg")
+    grid_size: int       = Field(5, ge=2, le=8, description="Grid dimension (5 = 25 items/call)")
+    name:      str       = Field("batch")
+
+
+class AssetPipelineRequest(BaseModel):
+    theme:   str  = Field(..., description="Game world theme (e.g. 'dark ice dungeon')")
+    details: str  = Field("", description="Additional world details")
+    genre:   str  = Field("dungeon")
+    seed:    int  = Field(0)
+
+
+class AssetPipelineResponse(BaseModel):
+    status:       str
+    output_dir:   str
+    files_saved:  int
+    characters:   int
+    quests:       int
+    items:        int
+    lua_scripts:  List[str]
+    model:        str
+    provider:     str
+
+
+class LLMChatRequest(BaseModel):
+    prompt:      str   = Field(..., description="User prompt")
+    system:      str   = Field("", description="System prompt (optional)")
+    task:        str   = Field("default", description="default|fast|code|creative|small")
+    provider:    str   = Field("", description="Force a specific provider (optional)")
+    max_tokens:  int   = Field(2048, ge=64, le=8192)
+    temperature: float = Field(0.7, ge=0.0, le=2.0)
+
+
+class LLMChatResponse(BaseModel):
+    status:     str
+    text:       str
+    provider:   str
+    model:      str
+    latency_ms: int
+    ok:         bool
+
+
+class LLMProvidersResponse(BaseModel):
+    available:      List[Dict[str, Any]]
+    all_providers:  List[Dict[str, Any]]
+    count:          int
+
+
+# ---------------------------------------------------------------------------
 # Game generation request
 # ---------------------------------------------------------------------------
 

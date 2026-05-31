@@ -1,0 +1,23 @@
+{
+  "mcpServers": {
+    "voxelforge": {
+      "command": "python3",
+      "args": ["-m", "forge.mcp_server"],
+      "env": {
+        "VOXELFORGE_ASSETS_DIR": "generated_assets"
+      },
+      "description": "VoxelForge Studio — 32 tools for complete AI game creation",
+      "tools": [
+        "generate_terrain", "generate_building", "generate_character",
+        "generate_prop", "generate_dungeon", "generate_game",
+        "build_world", "generate_sprite", "generate_sprite_sheet",
+        "generate_batch_sprites", "remove_background",
+        "generate_html5_game", "run_asset_pipeline",
+        "generate_storyline", "generate_dialogue_tree",
+        "run_pipeline", "init_project",
+        "llm_chat", "list_free_providers",
+        "list_assets", "render_preview", "export_spritesheet"
+      ]
+    }
+  }
+}

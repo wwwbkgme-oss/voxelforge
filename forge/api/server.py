@@ -46,14 +46,22 @@ from .models import (
     AgentRunRequest,
     AgentRunResponse,
     AssetListResponse,
+    AssetPipelineRequest,
+    AssetPipelineResponse,
     AssetResponse,
     BatchSpriteRequest,
+    BatchSpriteSheetRequest,
     BuildingRequest,
     CharacterRequest,
     DungeonRequest,
     ErrorResponse,
     GameGenerateRequest,
     GameGenerateResponse,
+    HTML5GameRequest,
+    HTML5GameResponse,
+    LLMChatRequest,
+    LLMChatResponse,
+    LLMProvidersResponse,
     NarrativeMessageRequest,
     NarrativeMessageResponse,
     NarrativeSessionRequest,
@@ -67,6 +75,8 @@ from .models import (
     SceneResponse,
     SpriteGenerateRequest,
     SpriteGenerateResponse,
+    SpriteSheetRequest,
+    SpriteSheetResponse,
     TerrainRequest,
     WorldBuildRequest,
     WorldResponse,
@@ -857,6 +867,218 @@ async def generate_game(req: GameGenerateRequest) -> GameGenerateResponse:
             entity_count  = manifest["entity_count"],
             asset_count   = len(manifest["assets"]),
             script_count  = len(manifest["scripts"]),
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+# ---------------------------------------------------------------------------
+# HTML5 Game Generator
+# ---------------------------------------------------------------------------
+
+@app.post("/html/generate", response_model=HTML5GameResponse, tags=["html-games"])
+async def generate_html5_game(req: HTML5GameRequest) -> HTML5GameResponse:
+    """
+    Generate a complete, immediately-playable single-file HTML5 game.
+    Uses free LLMs (Groq, Cerebras, Gemini, OpenRouter) automatically.
+    Falls back to a procedural canvas game if no API key is configured.
+    Open the returned html_path directly in any browser — no setup needed.
+    """
+    try:
+        from ..gamegen import HTML5GameGenerator
+        gen  = HTML5GameGenerator(output_dir=os.path.join(ASSETS_DIR, "games", "html"))
+        game = gen.generate(
+            prompt     = req.prompt,
+            genre      = req.genre,
+            title      = req.title,
+            name       = req.name,
+            max_tokens = req.max_tokens,
+        )
+        return HTML5GameResponse(
+            status    = "ok",
+            title     = game.title,
+            genre     = game.genre,
+            html_path = _engine_rel(game.html_path),
+            open_url  = game.open_url(),
+            valid     = game.valid,
+            provider  = game.provider,
+            model     = game.model,
+            issues    = game.issues,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+# ---------------------------------------------------------------------------
+# Sprite Sheet Generator (advanced styles + animation actions)
+# ---------------------------------------------------------------------------
+
+@app.post("/sprite/sheet", response_model=SpriteSheetResponse, tags=["sprites"])
+async def generate_sprite_sheet(req: SpriteSheetRequest) -> SpriteSheetResponse:
+    """
+    Generate a full character sprite sheet with multiple animation actions.
+    Supports 11 game art styles (Stardew Valley, Hollow Knight, Genshin Impact, etc.)
+    and 12 animation actions (idle, walk, run, jump, attack, cast, hurt, death...).
+    """
+    try:
+        from ..spritesheet import SpriteSheetForge, GameStyle, AnimationAction
+        forge_ss = SpriteSheetForge(output_dir=os.path.join(ASSETS_DIR, "sprites"))
+        style    = GameStyle(req.style) if req.style in [e.value for e in GameStyle] else GameStyle.PIXEL_ART_RPG
+        valid_actions = {e.value for e in AnimationAction}
+        actions  = [AnimationAction(a) for a in req.actions if a in valid_actions]
+        if not actions:
+            actions = [AnimationAction.IDLE, AnimationAction.WALK]
+        result   = forge_ss.generate_character_sheet(
+            description = req.description,
+            style       = style,
+            actions     = actions,
+            name        = req.name,
+        )
+        return SpriteSheetResponse(
+            status           = "ok",
+            spritesheet_path = _engine_rel(result.spritesheet_path),
+            frame_count      = result.frame_count,
+            gif_path         = _engine_rel(result.gif_path) if result.gif_path else None,
+            has_alpha        = result.has_alpha,
+            source           = result.source,
+            style            = req.style,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/sprite/batch-sheet", tags=["sprites"])
+async def generate_batch_sprite_sheet(req: BatchSpriteSheetRequest) -> Dict[str, Any]:
+    """
+    Generate a batch of props/items using grid-based generation.
+    25 items per API call — approximately 30x cheaper than individual generation.
+    """
+    try:
+        from ..spritesheet import SpriteSheetForge, GameStyle
+        forge_ss = SpriteSheetForge(output_dir=os.path.join(ASSETS_DIR, "sprites"))
+        style    = GameStyle(req.style) if req.style in [e.value for e in GameStyle] else GameStyle.PIXEL_ART_RPG
+        result   = forge_ss.generate_prop_batch(
+            prompts   = req.prompts,
+            style     = style,
+            grid_size = req.grid_size,
+            name      = req.name,
+        )
+        return {
+            "status":  "ok",
+            "count":   len(result.image_paths),
+            "images":  result.image_paths,
+            "source":  result.source,
+            "style":   req.style,
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+# ---------------------------------------------------------------------------
+# Asset Pipeline (storyline → NPCs → quests → dialogue → items)
+# ---------------------------------------------------------------------------
+
+@app.post("/pipeline/assets", response_model=AssetPipelineResponse, tags=["pipeline"])
+async def run_asset_pipeline(req: AssetPipelineRequest) -> AssetPipelineResponse:
+    """
+    Run the full narrative asset pipeline using free LLMs.
+
+    Generates: storyline → 2 NPC characters → backstories → quests →
+    branching dialogue trees (JSON) → game items with visual descriptions →
+    world elements → Lua scripts ready for VoxelForge.
+
+    Works with Groq/Gemini/Cerebras/OpenRouter free tier or no API key at all
+    (template fallbacks ensure output is always produced).
+    """
+    try:
+        from ..gamegen import AssetPipeline
+        pipeline = AssetPipeline(output_dir=os.path.join(ASSETS_DIR, "narrative_packs"))
+        pack     = pipeline.run(
+            theme   = req.theme,
+            details = req.details,
+            genre   = req.genre,
+            seed    = req.seed,
+        )
+        paths = pack.save()
+        return AssetPipelineResponse(
+            status      = "ok",
+            output_dir  = _engine_rel(pack.output_dir),
+            files_saved = len(paths),
+            characters  = len(pack.characters),
+            quests      = len(pack.quests),
+            items       = len(pack.items),
+            lua_scripts = list(pack.lua_scripts.keys()),
+            model       = pack.model,
+            provider    = pack.provider,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+# ---------------------------------------------------------------------------
+# Free LLM Router
+# ---------------------------------------------------------------------------
+
+@app.post("/llm/chat", response_model=LLMChatResponse, tags=["llm"])
+async def llm_chat(req: LLMChatRequest) -> LLMChatResponse:
+    """
+    Send a prompt to the best available free LLM provider.
+
+    Auto-routes through: Groq → Cerebras → SambaNova → NVIDIA NIM →
+    Gemini → OpenRouter free → LLM7 → Together AI → Ollama (local).
+
+    Task hints select the best model for the job:
+    - fast: 8B models for quick responses
+    - code: coding-optimized models
+    - creative: larger models for story/design generation
+    """
+    try:
+        from ..llm_router import get_router
+        router = get_router()
+        resp   = router.chat(
+            prompt      = req.prompt,
+            system      = req.system or None,
+            task        = req.task,
+            provider    = req.provider or None,
+            max_tokens  = req.max_tokens,
+            temperature = req.temperature,
+        )
+        return LLMChatResponse(
+            status     = "ok",
+            text       = resp.text,
+            provider   = resp.provider,
+            model      = resp.model,
+            latency_ms = resp.latency_ms,
+            ok         = resp.ok,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/llm/providers", response_model=LLMProvidersResponse, tags=["llm"])
+async def list_llm_providers() -> LLMProvidersResponse:
+    """
+    List all LLM providers and which ones have an API key configured.
+    Shows free tier info for each provider.
+    """
+    try:
+        from ..llm_router import LLMRouter, _PROVIDERS
+        router = LLMRouter()
+        avail  = router.available_providers()
+        all_p  = [
+            {
+                "name":      p.name,
+                "priority":  p.priority,
+                "free_note": p.free_note,
+                "has_key":   bool(os.environ.get(p.env_key, "")),
+                "models":    list(p.models.values())[:3],
+            }
+            for p in _PROVIDERS
+        ]
+        return LLMProvidersResponse(
+            available     = avail,
+            all_providers = all_p,
+            count         = len(avail),
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc

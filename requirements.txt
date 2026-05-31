@@ -1,20 +1,31 @@
-# VoxelForge Python dependencies
-# ================================
+# VoxelForge Studio Python dependencies
+# =======================================
 
 # Core
 numpy>=1.24.0
 
-# REST API server
+# REST API + MCP server
 fastapi>=0.110.0
 uvicorn[standard]>=0.29.0
 pydantic>=2.0.0
 
-# HTTP client (used by AI tools layer to call the API)
+# HTTP client (LLM router, API calls, image generation)
 requests>=2.31.0
 
-# AI integration (optional — required only for LLM-powered agent)
-# Install with: pip install openai
+# Image processing (sprite renderer, chroma-key, spritesheets)
+Pillow>=10.0.0
+
+# Background removal — optional but strongly recommended
+# pip install rembg onnxruntime
+# rembg>=2.0.50
+
+# AI integration (optional — LLM-powered agent, OpenAI DALL-E)
+# pip install openai
 openai>=1.20.0
+
+# Google Gemini (free tier — gemini-2.5-flash)
+# pip install google-generativeai
+# google-generativeai>=0.8.0
 
 # Development / testing
 pytest>=8.0.0

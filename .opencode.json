@@ -1,0 +1,15 @@
+{
+  "$schema": "https://opencode.ai/config.schema.json",
+  "project": "VoxelForge Studio",
+  "tools": {
+    "voxelforge": {
+      "type": "mcp",
+      "command": ["python3", "-m", "forge.mcp_server"],
+      "description": "AI-powered voxel game creation — 32 tools for terrain, buildings, characters, sprites, HTML5 games, narrative pipelines, and more",
+      "env": {
+        "VOXELFORGE_ASSETS_DIR": "generated_assets"
+      }
+    }
+  },
+  "instructions": "You have access to VoxelForge Studio tools. Use them to generate complete game assets. Key workflows:\n1. Full game: call generate_game(title, genre)\n2. HTML5 game: call generate_html5_game(prompt)\n3. Narrative pack: call run_asset_pipeline(theme, genre)\n4. Individual assets: generate_terrain/building/character/prop/dungeon\n5. AI sprites: generate_sprite(prompt, style)\n6. Batch sprites: generate_batch_sprites(prompts, style)\n7. Free LLM: llm_chat(prompt, task='creative') — auto-selects best free provider"
+}
