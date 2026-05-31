@@ -4,6 +4,8 @@
 
 [![CI](https://github.com/wwwbkgme-oss/voxelforge/actions/workflows/ci.yml/badge.svg)](https://github.com/wwwbkgme-oss/voxelforge/actions)
 
+![VoxelForge Demo Banner](docs/demo/banner.png)
+
 VoxelForge lets an AI autonomously create complete, playable game worlds and mini-games — terrain, dungeons, buildings, characters, enemies with AI scripts, props, and fully assembled scene files — entirely without human intervention.
 
 Built on top of the [Vopix Engine](https://github.com/KellerMartins/PixelVoxels) (a C ECS voxel engine that renders MagicaVoxel `.vox` files as isometric pixel art), VoxelForge adds:
@@ -111,6 +113,41 @@ voxelforge/
 ├── docker/                  # Docker + docker-compose
 └── .github/workflows/ci.yml # CI (Python 3.10/3.11/3.12)
 ```
+
+---
+
+## Demo — AI-Generated Assets
+
+All images below are **100% procedurally generated** by VoxelForge's Python generators
+and rendered with the software isometric sprite renderer (no manual art, no engine needed).
+
+### Terrain Biomes
+| Grassland | Desert | Snow | Ocean | Forest |
+|-----------|--------|------|-------|--------|
+| ![](docs/demo/terrain_grassland.png) | ![](docs/demo/terrain_desert.png) | ![](docs/demo/terrain_snow.png) | ![](docs/demo/terrain_ocean.png) | ![](docs/demo/terrain_forest.png) |
+
+### Buildings (5 Styles)
+| Medieval | Modern | Sci-Fi | Rustic | Fantasy |
+|----------|--------|--------|--------|---------|
+| ![](docs/demo/building_medieval.png) | ![](docs/demo/building_modern.png) | ![](docs/demo/building_sci_fi.png) | ![](docs/demo/building_rustic.png) | ![](docs/demo/building_fantasy.png) |
+
+### Characters & Props
+| Warrior | Mage | Archer | Rogue | Tree | Chest | Mushroom |
+|---------|------|--------|-------|------|-------|---------|
+| ![](docs/demo/char_warrior.png) | ![](docs/demo/char_mage.png) | ![](docs/demo/char_archer.png) | ![](docs/demo/char_rogue.png) | ![](docs/demo/prop_tree.png) | ![](docs/demo/prop_chest.png) | ![](docs/demo/prop_mushroom.png) |
+
+### Dungeon Styles (BSP-Generated)
+| Stone | Dungeon | Cave | Ice |
+|-------|---------|------|-----|
+| ![](docs/demo/dungeon_stone.png) | ![](docs/demo/dungeon_dungeon.png) | ![](docs/demo/dungeon_cave.png) | ![](docs/demo/dungeon_ice.png) |
+
+### Complete Game Levels
+| Village | Dungeon | Space | Fantasy | Arctic |
+|---------|---------|-------|---------|--------|
+| ![](docs/demo/game_village_level.png) | ![](docs/demo/game_dungeon_level.png) | ![](docs/demo/game_space_level.png) | ![](docs/demo/game_fantasy_level.png) | ![](docs/demo/game_arctic_level.png) |
+
+> Rendered with `forge.export.sprite_renderer.VoxelSpriteRenderer` — isometric projection,
+> painter's algorithm depth sort, 3-face shading (top/left/right).
 
 ---
 
@@ -246,6 +283,28 @@ count = render_all_assets("generated_assets", "thumbnails")
 ```
 
 Requires `pip install Pillow`. No OpenGL or C engine needed.
+
+---
+
+## Claude Code Game Studios Integration
+
+VoxelForge includes a full **CLAUDE.md** configuration and 6 specialized agent roles inspired by
+[Claude Code Game Studios](https://github.com/Donchitos/Claude-Code-Game-Studios):
+
+| Command | Description |
+|---------|-------------|
+| `voxelforge gdd "My Game" --genre dungeon` | Generate a Game Design Document |
+| `voxelforge brainstorm "zombie island" --preview` | 5 creative game directions (MDA-guided) |
+| `voxelforge mda manifest.json` | MDA framework analysis of a generated game |
+| `voxelforge adr "use string concat for Lua"` | Create an Architecture Decision Record |
+| `voxelforge lore "Crystal Keep" --genre dungeon` | Generate world narrative + flavour text |
+| `voxelforge game --title "Ice Dungeon" --genre dungeon` | Generate a complete mini-game |
+| `voxelforge sprite --input model.vox --output preview.png` | Render .vox to isometric PNG |
+
+**Agent roles** (in `.claude/agents/`):
+`creative-director` · `game-designer` · `voxelforge-dev` · `level-designer` · `art-director` · `qa-lead`
+
+**Design documents** (in `design/`): 5 ADRs · example GDD · sprint plan
 
 ---
 

@@ -85,10 +85,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Serve the web dashboard at /
+# Serve the web dashboard at /ui
 _static_dir = os.path.join(os.path.dirname(__file__), "static")
 if os.path.isdir(_static_dir):
     app.mount("/ui", StaticFiles(directory=_static_dir, html=True), name="ui")
+
+# Serve demo sprites at /demo (repo docs/demo/)
+_demo_dir = os.path.join(os.path.dirname(__file__), "..", "..", "docs", "demo")
+_demo_dir = os.path.normpath(_demo_dir)
+if os.path.isdir(_demo_dir):
+    app.mount("/demo", StaticFiles(directory=_demo_dir), name="demo")
 
 
 def _palette() -> Palette:

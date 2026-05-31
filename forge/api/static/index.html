@@ -180,6 +180,29 @@
 
   </div>
 
+  <!-- ── Demo Gallery ── -->
+  <div class="card" style="margin-bottom:1.5rem">
+    <h2>🖼️ AI-Generated Asset Gallery</h2>
+    <p style="font-size:.8rem;color:var(--muted);margin-bottom:.75rem">
+      Every image below is a procedurally generated voxel asset rendered with VoxelForge's software isometric renderer.
+      No manual art — 100% AI-generated.
+    </p>
+
+    <div id="gallery-tabs" style="display:flex;gap:.5rem;margin-bottom:.75rem;flex-wrap:wrap">
+      <button class="btn-outline" style="margin:0;padding:.3rem .7rem;font-size:.75rem" onclick="showGallery('terrain')">Terrain</button>
+      <button class="btn-outline" style="margin:0;padding:.3rem .7rem;font-size:.75rem" onclick="showGallery('building')">Buildings</button>
+      <button class="btn-outline" style="margin:0;padding:.3rem .7rem;font-size:.75rem" onclick="showGallery('char')">Characters</button>
+      <button class="btn-outline" style="margin:0;padding:.3rem .7rem;font-size:.75rem" onclick="showGallery('prop')">Props</button>
+      <button class="btn-outline" style="margin:0;padding:.3rem .7rem;font-size:.75rem" onclick="showGallery('dungeon')">Dungeons</button>
+      <button class="btn-outline" style="margin:0;padding:.3rem .7rem;font-size:.75rem" onclick="showGallery('game')">Game Levels</button>
+    </div>
+
+    <div id="gallery-grid" style="
+      display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));
+      gap:.5rem;max-height:220px;overflow-y:auto;">
+    </div>
+  </div>
+
   <!-- ── Full Game Generator ── -->
   <div class="card" style="margin-bottom:1.5rem">
     <h2>🎮 Generate Complete Game</h2>
@@ -511,8 +534,35 @@ async function loadAssets() {
   } catch {}
 }
 
+// ── Gallery ───────────────────────────────────────────────────────────────
+
+const DEMO_ASSETS = {
+  terrain:  ['terrain_grassland','terrain_desert','terrain_snow','terrain_ocean','terrain_forest'],
+  building: ['building_medieval','building_modern','building_sci_fi','building_rustic','building_fantasy'],
+  char:     ['char_warrior','char_mage','char_archer','char_rogue'],
+  prop:     ['prop_tree','prop_crate','prop_barrel','prop_chest','prop_rock','prop_mushroom','prop_lamp_post'],
+  dungeon:  ['dungeon_stone','dungeon_dungeon','dungeon_cave','dungeon_ice'],
+  game:     ['game_village_level','game_dungeon_level','game_space_level','game_fantasy_level','game_arctic_level'],
+};
+
+function showGallery(category) {
+  const grid  = document.getElementById('gallery-grid');
+  const items = DEMO_ASSETS[category] || [];
+  grid.innerHTML = items.map(name => `
+    <div style="background:#0f1117;border:1px solid #2a2d3a;border-radius:8px;overflow:hidden;text-align:center">
+      <img src="/demo/${name}.png"
+           onerror="this.style.display='none'"
+           style="width:100%;image-rendering:pixelated;aspect-ratio:1;object-fit:contain;background:#080a10"
+           title="${name.replace(/_/g,' ')}">
+      <div style="font-size:.65rem;color:#64748b;padding:3px 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+        ${name.replace(/_/g,' ')}
+      </div>
+    </div>`).join('');
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────
 updateAssetForm();
+showGallery('terrain');
 checkStatus();
 setInterval(checkStatus, 15000);
 </script>

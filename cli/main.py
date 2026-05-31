@@ -152,17 +152,17 @@ def cmd_scene(args: argparse.Namespace) -> None:
         if not args.file:
             print("ERROR: --file required for validate")
             sys.exit(1)
-        scene = Scene.load(args.file)
+        from forge.scene import Scene as VFScene
+        scene = VFScene.load(args.file)
         print(f"Scene: {args.file}")
-        print(f"  Entities: {len(scene.entities)}")
+        print(f"  Entities: {scene.entity_count}")
+        # Check all VoxelModel assets exist
         missing = []
-        for eid, ent in scene.entities.items():
-            if ent.voxel_model:
-                p = os.path.join(
-                    ent.voxel_model.model_path,
-                    ent.voxel_model.model_name,
-                )
-                if not os.path.isfile(p):
+        for entity in scene._entities:
+            vm = entity.get("VoxelModel")
+            if vm:
+                p = os.path.join(vm.get("modelPath",""), vm.get("modelName",""))
+                if p and not os.path.isfile(p):
                     missing.append(p)
         if missing:
             print(f"  MISSING assets ({len(missing)}):")
@@ -170,6 +170,115 @@ def cmd_scene(args: argparse.Namespace) -> None:
                 print(f"    {m}")
         else:
             print("  All assets present ✓")
+
+
+# ---------------------------------------------------------------------------
+# Studio commands (Claude Code Game Studios-inspired)
+# ---------------------------------------------------------------------------
+
+def cmd_gdd(args: argparse.Namespace) -> None:
+    """Generate a Game Design Document."""
+    from forge.studio import GameDesignDoc
+    gdd  = GameDesignDoc(
+        title        = args.title,
+        genre        = args.genre,
+        player_class = args.player_class,
+        enemies      = args.enemies,
+        props        = args.props,
+        level_size   = args.level_size,
+        seed         = args.seed,
+    )
+    out = args.output or f"design/gdds/{gdd.slug}.md"
+    path = gdd.save(out)
+    print(f"GDD written → {path}")
+    if args.preview:
+        print("\n" + gdd.to_markdown()[:800] + "\n...")
+
+
+def cmd_brainstorm(args: argparse.Namespace) -> None:
+    """Run a creative brainstorming session."""
+    from forge.studio import BrainstormSession
+    session = BrainstormSession(args.concept, seed=args.seed)
+    out     = args.output or f"design/brainstorm_{args.concept[:20].replace(' ','_')}.md"
+    path    = session.save(out)
+    print(f"Brainstorm saved → {path}")
+    if args.preview:
+        print("\n" + session.generate()[:600] + "\n...")
+
+
+def cmd_mda(args: argparse.Namespace) -> None:
+    """Analyze a game using the MDA framework."""
+    from forge.studio import MDAAnalyzer
+    if not os.path.isfile(args.manifest):
+        print(f"ERROR: manifest not found: {args.manifest}")
+        sys.exit(1)
+    analyzer = MDAAnalyzer.from_file(args.manifest)
+    text     = analyzer.analyze()
+    out      = args.output or "design/mda_analysis.md"
+    analyzer.save(out)
+    print(f"MDA analysis saved → {out}")
+    print(text[:600] + "\n...")
+
+
+def cmd_adr(args: argparse.Namespace) -> None:
+    """Create an Architecture Decision Record."""
+    from forge.studio import ADRWriter
+    writer = ADRWriter(adr_dir=args.adr_dir)
+    path   = writer.create(args.title, context=args.context, decision=args.decision)
+    print(f"ADR created → {path}")
+
+
+def cmd_lore(args: argparse.Namespace) -> None:
+    """Generate world lore for a game."""
+    from forge.studio import LoreGenerator
+    gen  = LoreGenerator(args.world_name, genre=args.genre)
+    out  = args.output or f"design/lore_{args.world_name[:20].replace(' ','_')}.md"
+    path = gen.save(out)
+    print(f"Lore saved → {path}")
+    print(gen.generate()[:400] + "\n...")
+
+
+def cmd_game(args: argparse.Namespace) -> None:
+    """Generate a complete mini-game."""
+    from forge.voxel import Palette
+    from forge.generators.game import GameGenerator
+    gen      = GameGenerator(Palette.natural(), seed=args.seed,
+                              output_dir=args.output_dir or "generated_assets")
+    manifest = gen.generate(
+        title        = args.title,
+        genre        = args.genre,
+        player_class = args.player_class,
+        enemies      = args.enemies,
+        props        = args.props,
+        level_size   = args.level_size,
+    )
+    print(f"Game generated!")
+    print(f"  Scene:    {manifest['scene_path']}")
+    print(f"  Assets:   {len(manifest['assets'])}")
+    print(f"  Scripts:  {len(manifest['scripts'])}")
+    print(f"  Entities: {manifest['entity_count']}")
+    print(f"\nRun: {manifest['run_command']}")
+
+
+def cmd_sprite(args: argparse.Namespace) -> None:
+    """Render a .vox file to an isometric PNG sprite."""
+    try:
+        from forge.export.sprite_renderer import render_vox_to_png, render_all_assets
+    except RuntimeError as e:
+        print(f"ERROR: {e}")
+        sys.exit(1)
+    if args.input:
+        out  = args.output or os.path.splitext(args.input)[0] + "_preview.png"
+        path = render_vox_to_png(args.input, out,
+                                  tile_w=args.tile_w, tile_h=args.tile_h)
+        print(f"Sprite saved → {path}")
+    elif args.all:
+        assets_dir = os.environ.get("VOXELFORGE_ASSETS_DIR", "generated_assets")
+        count = render_all_assets(assets_dir, args.thumbs_dir or "generated_assets/thumbnails")
+        print(f"Rendered {count} sprites to {args.thumbs_dir or 'generated_assets/thumbnails'}/")
+    else:
+        print("ERROR: provide --input <path.vox> or --all")
+        sys.exit(1)
 
 
 # ---------------------------------------------------------------------------
@@ -234,6 +343,68 @@ def build_parser() -> argparse.ArgumentParser:
     p_scene.add_argument("action", choices=["list", "validate"])
     p_scene.add_argument("--file", default=None)
 
+    # --- game ---
+    p_game = sub.add_parser("game", help="Generate a complete mini-game")
+    p_game.add_argument("--title",        default="VoxelForge Game")
+    p_game.add_argument("--genre",        default="village",
+                        choices=["village","dungeon","space","fantasy","horror","arctic"])
+    p_game.add_argument("--player-class", dest="player_class", default="warrior",
+                        choices=["warrior","mage","archer","rogue"])
+    p_game.add_argument("--enemies",      type=int, default=3)
+    p_game.add_argument("--props",        type=int, default=6)
+    p_game.add_argument("--level-size",   dest="level_size", type=int, default=48)
+    p_game.add_argument("--seed",         type=int, default=0)
+    p_game.add_argument("--output-dir",   dest="output_dir", default=None)
+
+    # --- gdd ---
+    p_gdd = sub.add_parser("gdd", help="Generate a Game Design Document")
+    p_gdd.add_argument("title")
+    p_gdd.add_argument("--genre",        default="village",
+                       choices=["village","dungeon","space","fantasy","horror","arctic"])
+    p_gdd.add_argument("--player-class", dest="player_class", default="warrior")
+    p_gdd.add_argument("--enemies",      type=int, default=3)
+    p_gdd.add_argument("--props",        type=int, default=6)
+    p_gdd.add_argument("--level-size",   dest="level_size", type=int, default=48)
+    p_gdd.add_argument("--seed",         type=int, default=0)
+    p_gdd.add_argument("--output",       default=None)
+    p_gdd.add_argument("--preview",      action="store_true")
+
+    # --- brainstorm ---
+    p_bs = sub.add_parser("brainstorm", help="Creative brainstorming session")
+    p_bs.add_argument("concept", help="Game concept to brainstorm")
+    p_bs.add_argument("--seed",    type=int, default=0)
+    p_bs.add_argument("--output",  default=None)
+    p_bs.add_argument("--preview", action="store_true")
+
+    # --- mda ---
+    p_mda = sub.add_parser("mda", help="MDA framework analysis of a game manifest")
+    p_mda.add_argument("manifest", help="Path to manifest.json from game generation")
+    p_mda.add_argument("--output", default=None)
+
+    # --- adr ---
+    p_adr = sub.add_parser("adr", help="Create an Architecture Decision Record")
+    p_adr.add_argument("title",      help="ADR title")
+    p_adr.add_argument("--context",  default="", help="Context for the decision")
+    p_adr.add_argument("--decision", default="", help="The decision made")
+    p_adr.add_argument("--adr-dir",  dest="adr_dir", default="design/adrs")
+
+    # --- lore ---
+    p_lore = sub.add_parser("lore", help="Generate world lore / narrative")
+    p_lore.add_argument("world_name", help="World or game name")
+    p_lore.add_argument("--genre",  default="village",
+                        choices=["village","dungeon","space","fantasy","horror","arctic"])
+    p_lore.add_argument("--output", default=None)
+
+    # --- sprite ---
+    p_sprite = sub.add_parser("sprite", help="Render .vox to isometric PNG sprite")
+    p_sprite.add_argument("--input",      default=None, help=".vox file to render")
+    p_sprite.add_argument("--output",     default=None, help="Output PNG path")
+    p_sprite.add_argument("--all",        action="store_true",
+                          help="Render all assets in VOXELFORGE_ASSETS_DIR")
+    p_sprite.add_argument("--thumbs-dir", dest="thumbs_dir", default=None)
+    p_sprite.add_argument("--tile-w",     dest="tile_w", type=int, default=8)
+    p_sprite.add_argument("--tile-h",     dest="tile_h", type=int, default=4)
+
     return parser
 
 
@@ -241,11 +412,18 @@ def main() -> None:
     parser = build_parser()
     args   = parser.parse_args()
     dispatch = {
-        "api":      cmd_api,
-        "generate": cmd_generate,
-        "world":    cmd_world,
-        "agent":    cmd_agent,
-        "scene":    cmd_scene,
+        "api":        cmd_api,
+        "generate":   cmd_generate,
+        "world":      cmd_world,
+        "agent":      cmd_agent,
+        "scene":      cmd_scene,
+        "game":       cmd_game,
+        "gdd":        cmd_gdd,
+        "brainstorm": cmd_brainstorm,
+        "mda":        cmd_mda,
+        "adr":        cmd_adr,
+        "lore":       cmd_lore,
+        "sprite":     cmd_sprite,
     }
     dispatch[args.command](args)
 
