@@ -407,6 +407,139 @@ def cmd_project(args: argparse.Namespace) -> None:
             print(f"\nNext milestone: {m['name']} — {m['date']}")
 
 
+def cmd_model(args: argparse.Namespace) -> None:
+    """GGUF model management (download/list/remove/info/recommend)."""
+    from forge.local_llm import ModelManager, MODEL_CATALOG
+
+    mgr = ModelManager()
+
+    if args.model_action == "list":
+        downloaded = mgr.list_downloaded()
+        print(f"Downloaded models ({len(downloaded)}/{len(MODEL_CATALOG)}):")
+        if not downloaded:
+            print("  None yet. Run: voxelforge model download llama3.2-3b")
+        for m in downloaded:
+            print(f"  ✓ {m['id']:<22} {m['size_gb']:.1f} GB  {m['path']}")
+        print(f"\nAll available models ({len(MODEL_CATALOG)}):")
+        for spec in MODEL_CATALOG.values():
+            tag  = "✓" if mgr.is_downloaded(spec.id) else " "
+            mark = "★" if "recommended" in spec.tags else " "
+            print(f" {tag}{mark} {spec.id:<22} ~{spec.size_gb:.1f}GB  {spec.description[:55]}")
+
+    elif args.model_action == "download":
+        if not args.model_id:
+            print("ERROR: provide a model ID. Run: voxelforge model list")
+            sys.exit(1)
+        try:
+            path = mgr.download(args.model_id, force=getattr(args,'force',False))
+            print(f"\nDownloaded: {path}")
+        except ValueError as e:
+            print(f"ERROR: {e}")
+            sys.exit(1)
+
+    elif args.model_action == "remove":
+        ok = mgr.remove(args.model_id)
+        if not ok:
+            print(f"Model not found: {args.model_id}")
+
+    elif args.model_action == "info":
+        import json
+        info = mgr.info(args.model_id)
+        print(json.dumps(info, indent=2))
+
+    elif args.model_action == "recommend":
+        recs = mgr.recommend_for_hardware()
+        print("Models recommended for your hardware:")
+        for mid in recs[:6]:
+            info = mgr.info(mid)
+            mark = "✓" if info.get("downloaded") else " "
+            print(f"  {mark} {mid:<22} ~{info['size_gb']:.1f}GB  {info['description'][:50]}")
+
+
+def cmd_serve(args: argparse.Namespace) -> None:
+    """Start the local llama.cpp inference server."""
+    from forge.local_llm import (
+        InferenceServer, ModelManager,
+        detect_gpu_backend, detect_optimal_threads, detect_optimal_gpu_layers,
+    )
+    mgr   = ModelManager()
+    model = args.model
+
+    if not model:
+        # Auto-select: recommended + downloaded
+        recs = mgr.recommend_for_hardware()
+        for mid in recs:
+            if mgr.is_downloaded(mid):
+                model = mid
+                print(f"[serve] Auto-selected model: {model}")
+                break
+        if not model:
+            recs_str = ", ".join(recs[:3])
+            print(f"No model downloaded. Download one first:\n  voxelforge model download {recs[:1][0] if recs else 'llama3.2-3b'}")
+            sys.exit(1)
+
+    gpu_layers = getattr(args, 'gpu_layers', 0)
+    if gpu_layers == -1:
+        gpu_layers = detect_optimal_gpu_layers(model)
+        print(f"[serve] Auto-detected GPU layers: {gpu_layers}")
+
+    threads = getattr(args, 'threads', 0) or detect_optimal_threads()
+    port    = getattr(args, 'port', 8090)
+    ctx     = getattr(args, 'ctx', 4096)
+
+    backend = detect_gpu_backend()
+    print(f"[serve] GPU backend: {backend}")
+    print(f"[serve] Threads: {threads}  Port: {port}  Ctx: {ctx}")
+
+    srv = InferenceServer(
+        manager      = mgr,
+        port         = port,
+        n_gpu_layers = gpu_layers,
+        context_size = ctx,
+        threads      = threads,
+    )
+    ok = srv.start(model, wait_secs=90)
+    if not ok:
+        print("Failed to start inference server.")
+        print("Is llama-server installed? Run: voxelforge inference install")
+        sys.exit(1)
+
+    print(f"\nInference server running at http://localhost:{port}")
+    print(f"  OpenAI-compatible API: http://localhost:{port}/v1")
+    print(f"  Use with VoxelForge: LLM_PROVIDER=local LLM_API_BASE=http://localhost:{port}/v1")
+    print("\nPress Ctrl+C to stop")
+    try:
+        while srv.running:
+            time.sleep(2)
+    except KeyboardInterrupt:
+        print("\nStopping inference server...")
+        srv.stop()
+
+
+def cmd_inference(args: argparse.Namespace) -> None:
+    """Install llama.cpp for local inference."""
+    if args.inf_action == "install":
+        from forge.local_llm import install_llama_cpp
+        enable_cuda  = not getattr(args, 'no_cuda', False)
+        enable_metal = not getattr(args, 'no_metal', False)
+        ok = install_llama_cpp(enable_cuda=enable_cuda, enable_metal=enable_metal)
+        if ok:
+            print("llama.cpp installed successfully.")
+            print("Now download a model: voxelforge model download llama3.2-3b")
+        else:
+            print("Installation failed. Please build llama.cpp manually.")
+            sys.exit(1)
+
+    elif args.inf_action == "status":
+        from forge.local_llm import find_llama_server, detect_gpu_backend
+        binary  = find_llama_server()
+        backend = detect_gpu_backend()
+        print(f"llama-server : {binary or 'not installed'}")
+        print(f"GPU backend  : {backend}")
+        if not binary:
+            print("\nInstall with: voxelforge inference install")
+
+
 def cmd_mcp(args: argparse.Namespace) -> None:
     """Start the VoxelForge MCP server for Claude Code / OpenCode / Cline."""
     from forge.mcp_server import main as mcp_main
@@ -665,6 +798,43 @@ def build_parser() -> argparse.ArgumentParser:
                         choices=["village","dungeon","space","fantasy","horror","arctic"])
     p_lore.add_argument("--output", default=None)
 
+    # --- model --- GGUF model management
+    p_model = sub.add_parser("model", help="Manage local GGUF models")
+    model_sub = p_model.add_subparsers(dest="model_action", required=True)
+
+    model_sub.add_parser("list",     help="List downloaded + available models")
+    model_sub.add_parser("recommend",help="Show models suited to this machine")
+
+    p_dl = model_sub.add_parser("download", help="Download a GGUF model from HuggingFace")
+    p_dl.add_argument("model_id", help="Catalog ID (e.g. llama3.2-3b) or owner/repo:file.gguf")
+    p_dl.add_argument("--force", action="store_true", help="Re-download even if present")
+    p_dl.add_argument("--url",  dest="custom_url", default="", help="Custom download URL")
+
+    p_rm = model_sub.add_parser("remove",   help="Delete a downloaded model")
+    p_rm.add_argument("model_id")
+
+    p_info = model_sub.add_parser("info",   help="Show detailed model info")
+    p_info.add_argument("model_id")
+
+    # --- serve --- start local inference server
+    p_serve = sub.add_parser("serve", help="Start llama.cpp local inference server")
+    p_serve.add_argument("--model",      default="", help="Model ID to load (auto-selects if omitted)")
+    p_serve.add_argument("--port",       type=int, default=8090)
+    p_serve.add_argument("--gpu-layers", dest="gpu_layers", type=int, default=0,
+                          help="-1=full GPU, 0=CPU only, N=partial")
+    p_serve.add_argument("--threads",    type=int, default=0, help="CPU threads (0=auto)")
+    p_serve.add_argument("--ctx",        type=int, default=4096, help="Context size")
+
+    # --- inference --- manage llama.cpp installation
+    p_inf = sub.add_parser("inference", help="Install and check llama.cpp inference")
+    inf_sub = p_inf.add_subparsers(dest="inf_action", required=True)
+
+    p_inst = inf_sub.add_parser("install", help="Build llama.cpp from source")
+    p_inst.add_argument("--no-cuda",  dest="no_cuda",  action="store_true")
+    p_inst.add_argument("--no-metal", dest="no_metal", action="store_true")
+
+    inf_sub.add_parser("status", help="Check if llama-server is installed")
+
     # --- mcp ---
     p_mcp = sub.add_parser("mcp", help="Start MCP server for Claude Code / OpenCode / Cline")
     p_mcp.add_argument("--transport", default="stdio", choices=["stdio","sse"])
@@ -795,6 +965,9 @@ def main() -> None:
         "html-game":      cmd_html_game,
         "sprite-sheet":   cmd_sprite_sheet,
         "asset-pipeline": cmd_asset_pipeline,
+        "model":          cmd_model,
+        "serve":          cmd_serve,
+        "inference":      cmd_inference,
     }
     dispatch[args.command](args)
 

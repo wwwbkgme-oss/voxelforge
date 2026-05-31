@@ -375,6 +375,58 @@ class LLMProvidersResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Local inference / model management requests
+# ---------------------------------------------------------------------------
+
+class ModelDownloadRequest(BaseModel):
+    model_id:   str  = Field(..., description="Model catalog ID, e.g. 'llama3.2-3b'")
+    force:      bool = Field(False, description="Re-download even if already present")
+    custom_url: str  = Field("", description="Override HuggingFace URL")
+
+
+class ModelDownloadResponse(BaseModel):
+    status:     str
+    model_id:   str
+    local_path: str
+    size_gb:    float
+
+
+class InferenceStartRequest(BaseModel):
+    model_id:     str   = Field(..., description="Model catalog ID to serve")
+    n_gpu_layers: int   = Field(0, description="-1 = all GPU, 0 = CPU only, N = partial")
+    context_size: int   = Field(4096)
+    threads:      int   = Field(0, description="0 = auto-detect")
+
+
+class InferenceStartResponse(BaseModel):
+    status:   str
+    model_id: str
+    base_url: str
+    port:     int
+
+
+class InferenceStatusResponse(BaseModel):
+    running:  bool
+    model_id: str
+    base_url: str
+    port:     int
+
+
+class InferenceChatRequest(BaseModel):
+    prompt:      str   = Field(...)
+    system:      str   = Field("")
+    max_tokens:  int   = Field(2048)
+    temperature: float = Field(0.7)
+
+
+class InferenceChatResponse(BaseModel):
+    status:    str
+    text:      str
+    model_id:  str
+    provider:  str
+
+
+# ---------------------------------------------------------------------------
 # Game generation request
 # ---------------------------------------------------------------------------
 

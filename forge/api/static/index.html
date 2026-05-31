@@ -180,6 +180,59 @@
 
   </div>
 
+  <!-- ── Local Model Management + Inference ── -->
+  <div class="grid2" style="margin-bottom:1.5rem">
+
+    <!-- Model Browser -->
+    <div class="card">
+      <h2>📦 Local GGUF Models</h2>
+      <p style="font-size:.78rem;color:var(--muted);margin-bottom:.5rem">
+        Download and run LLMs locally — no API key needed. Powered by llama.cpp (CPU + GPU).
+      </p>
+      <div style="display:flex;gap:.5rem;margin-bottom:.5rem">
+        <select id="model-select" style="flex:1" onchange="showModelInfo()">
+          <option value="">Loading catalog…</option>
+        </select>
+        <button class="btn-outline" style="margin:0;padding:.4rem .7rem" onclick="loadModelCatalog()">↻</button>
+      </div>
+      <div id="model-info" style="font-size:.75rem;color:var(--muted);margin-bottom:.5rem;min-height:40px"></div>
+      <div style="display:flex;gap:.5rem">
+        <button class="btn-green" style="flex:1;margin:0" onclick="downloadModel(this)">
+          <span class="spinner"></span><span class="label">⬇ Download</span>
+        </button>
+        <button class="btn-primary" style="flex:1;margin:0" onclick="startInference(this)">
+          <span class="spinner"></span><span class="label">▶ Start Server</span>
+        </button>
+        <button class="btn-outline" style="margin:0;padding:.4rem .7rem" onclick="stopInference()">■</button>
+      </div>
+      <div class="output" id="model-out" style="margin-top:.5rem">Loading catalog…</div>
+    </div>
+
+    <!-- Local Inference Chat -->
+    <div class="card">
+      <h2>🧠 Local Inference</h2>
+      <p style="font-size:.78rem;color:var(--muted);margin-bottom:.5rem">
+        Chat with your downloaded model. Falls back to cloud LLMs if server is offline.
+      </p>
+      <div id="inf-status" style="font-size:.72rem;color:var(--muted);margin-bottom:.4rem">
+        Checking server…
+      </div>
+      <div style="display:flex;gap:.3rem;margin-bottom:.4rem">
+        <select id="inf-task" style="width:120px">
+          <option>default</option><option>creative</option>
+          <option>code</option><option>fast</option>
+        </select>
+      </div>
+      <textarea id="inf-prompt" placeholder="Ask your local model anything…" style="min-height:60px;margin-bottom:.4rem"></textarea>
+      <button class="btn-primary" style="width:100%;justify-content:center" onclick="localChat(this)">
+        <span class="spinner"></span>
+        <span class="label">💬 Chat (local / cloud fallback)</span>
+      </button>
+      <div class="output" id="inf-out" style="margin-top:.4rem;max-height:160px;overflow-y:auto">Ready.</div>
+    </div>
+
+  </div>
+
   <!-- ── New feature panels row ── -->
   <div class="grid3" style="margin-bottom:1.5rem">
 
@@ -628,6 +681,112 @@ async function loadAssets() {
   } catch {}
 }
 
+// ── Model Management + Local Inference ───────────────────────────────────
+
+let modelCatalog = {};
+
+async function loadModelCatalog() {
+  try {
+    const data = await api('GET', '/model/catalog');
+    modelCatalog = {};
+    const sel = document.getElementById('model-select');
+    sel.innerHTML = '<option value="">— select model —</option>';
+    for (const m of data.models) {
+      modelCatalog[m.id] = m;
+      const opt = document.createElement('option');
+      opt.value = m.id;
+      opt.textContent = `${m.downloaded ? '✓ ' : ''}${m.name} (${m.size_gb}GB)`;
+      sel.appendChild(opt);
+    }
+    setOut('model-out',
+      `Catalog: ${data.total} models  |  Downloaded: ${data.downloaded}\n` +
+      'Select a model to see details, then Download or Start Server.');
+  } catch(e) {
+    setOut('model-out', '❌ ' + e.message, true);
+  }
+}
+
+function showModelInfo() {
+  const id = document.getElementById('model-select').value;
+  const m  = modelCatalog[id];
+  if (!m) { document.getElementById('model-info').textContent = ''; return; }
+  document.getElementById('model-info').innerHTML =
+    `<b>${m.name}</b><br>` +
+    `${m.description}<br>` +
+    `RAM: ${m.ram_gb}GB  VRAM: ${m.gpu_vram_gb}GB  Ctx: ${(m.ctx_len/1024).toFixed(0)}K  ` +
+    `${m.downloaded ? '<span style="color:#10b981">✓ Downloaded</span>' : '<span style="color:#f59e0b">Not downloaded</span>'}`;
+}
+
+async function downloadModel(btn) {
+  const id = document.getElementById('model-select').value;
+  if (!id) { alert('Select a model first'); return; }
+  setLoading(btn, true);
+  setOut('model-out', `⬇ Downloading ${id}… this may take a while.`);
+  try {
+    const data = await api('POST', '/model/download', { model_id: id });
+    setOut('model-out',
+      `✅ Downloaded: ${data.local_path}\n` +
+      `Size: ${data.size_gb} GB`);
+    loadModelCatalog();
+  } catch(e) {
+    setOut('model-out', '❌ ' + e.message, true);
+  } finally { setLoading(btn, false); }
+}
+
+async function startInference(btn) {
+  const id = document.getElementById('model-select').value;
+  if (!id) { alert('Select a model first'); return; }
+  setLoading(btn, true);
+  setOut('model-out', `▶ Starting inference server with ${id}…`);
+  try {
+    const data = await api('POST', '/inference/start', {
+      model_id: id, n_gpu_layers: 0, context_size: 4096
+    });
+    setOut('model-out',
+      `✅ Server ${data.status === 'ok' ? 'running' : 'failed'}\n` +
+      `Model: ${data.model_id}\nURL: ${data.base_url}`);
+    updateInfStatus();
+  } catch(e) {
+    setOut('model-out', '❌ ' + e.message, true);
+  } finally { setLoading(btn, false); }
+}
+
+async function stopInference() {
+  try {
+    await api('POST', '/inference/stop');
+    document.getElementById('inf-status').textContent = '● Stopped';
+    setOut('model-out', 'Server stopped.');
+  } catch(e) {}
+}
+
+async function updateInfStatus() {
+  try {
+    const d = await api('GET', '/inference/status');
+    const el = document.getElementById('inf-status');
+    if (d.running) {
+      el.innerHTML = `<span style="color:#10b981">● Running</span> — ${d.model_id} on port ${d.port}`;
+    } else {
+      el.innerHTML = `<span style="color:#64748b">● Offline</span> — start a model above`;
+    }
+  } catch(e) {}
+}
+
+async function localChat(btn) {
+  const prompt = document.getElementById('inf-prompt').value.trim();
+  if (!prompt) return;
+  setLoading(btn, true);
+  setOut('inf-out', '⏳ Thinking…');
+  try {
+    const data = await api('POST', '/inference/chat', {
+      prompt,
+      task: document.getElementById('inf-task').value,
+    });
+    setOut('inf-out', `[${data.provider}]\n\n${data.text}`);
+  } catch(e) {
+    setOut('inf-out', '❌ ' + e.message, true);
+  } finally { setLoading(btn, false); }
+}
+
 // ── AI Sprite Generator ───────────────────────────────────────────────────
 
 async function generateAiSprite(btn) {
@@ -799,6 +958,9 @@ updateAssetForm();
 showGallery('terrain');
 checkStatus();
 setInterval(checkStatus, 15000);
+// Load model catalog and inference status after 1 second delay
+setTimeout(() => { loadModelCatalog(); updateInfStatus(); }, 1000);
+setInterval(updateInfStatus, 20000);
 </script>
 </body>
 </html>

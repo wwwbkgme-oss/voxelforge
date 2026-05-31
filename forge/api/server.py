@@ -59,7 +59,14 @@ from .models import (
     GameGenerateResponse,
     HTML5GameRequest,
     HTML5GameResponse,
+    InferenceChatRequest,
+    InferenceChatResponse,
+    InferenceStartRequest,
+    InferenceStartResponse,
+    InferenceStatusResponse,
     LLMChatRequest,
+    ModelDownloadRequest,
+    ModelDownloadResponse,
     LLMChatResponse,
     LLMProvidersResponse,
     NarrativeMessageRequest,
@@ -870,6 +877,197 @@ async def generate_game(req: GameGenerateRequest) -> GameGenerateResponse:
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+# ---------------------------------------------------------------------------
+# Local Model Management + Inference Server endpoints
+# ---------------------------------------------------------------------------
+
+_inference_server = None  # singleton InferenceServer instance
+
+def _get_inference_server():
+    global _inference_server
+    if _inference_server is None:
+        from ..local_llm import InferenceServer, ModelManager
+        _inference_server = InferenceServer(
+            manager      = ModelManager(),
+            host         = "0.0.0.0",
+            port         = int(os.environ.get("VFE_INFERENCE_PORT", "8090")),
+            n_gpu_layers = int(os.environ.get("VFE_N_GPU_LAYERS", "0")),
+            threads      = int(os.environ.get("VFE_THREADS", "0")),
+        )
+    return _inference_server
+
+
+@app.get("/model/catalog", tags=["models"])
+async def model_catalog() -> Dict[str, Any]:
+    """Return the full GGUF model catalog with download status for each model."""
+    from ..local_llm import ModelManager, MODEL_CATALOG
+    mgr = ModelManager()
+    return {
+        "status":  "ok",
+        "models":  [mgr.info(mid) for mid in MODEL_CATALOG],
+        "total":   len(MODEL_CATALOG),
+        "downloaded": len(mgr.list_downloaded()),
+    }
+
+
+@app.get("/model/downloaded", tags=["models"])
+async def list_downloaded_models() -> Dict[str, Any]:
+    """List all locally downloaded GGUF models."""
+    from ..local_llm import ModelManager
+    mgr = ModelManager()
+    return {"status": "ok", "models": mgr.list_downloaded()}
+
+
+@app.post("/model/download", response_model=ModelDownloadResponse, tags=["models"])
+async def download_model(req: ModelDownloadRequest) -> ModelDownloadResponse:
+    """
+    Download a GGUF model from HuggingFace.
+
+    Downloads to ~/.voxelforge/models/ (or VFE_MODELS_DIR).
+    Supports resume if the download was interrupted.
+    Use `GET /model/catalog` to see available model IDs.
+
+    Typical sizes: 360M=0.4GB, 1B=0.8GB, 3B=2GB, 7B=4.7GB
+    """
+    try:
+        from ..local_llm import ModelManager
+        mgr  = ModelManager()
+        path = mgr.download(
+            req.model_id,
+            force      = req.force,
+            custom_url = req.custom_url or None,
+        )
+        return ModelDownloadResponse(
+            status     = "ok",
+            model_id   = req.model_id,
+            local_path = str(path),
+            size_gb    = round(path.stat().st_size / 1e9, 2),
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.delete("/model/{model_id}", tags=["models"])
+async def remove_model(model_id: str) -> Dict[str, Any]:
+    """Delete a downloaded GGUF model from local storage."""
+    from ..local_llm import ModelManager
+    ok = ModelManager().remove(model_id)
+    return {"status": "ok" if ok else "not_found", "model_id": model_id}
+
+
+@app.get("/model/recommend", tags=["models"])
+async def recommend_models() -> Dict[str, Any]:
+    """Recommend models suitable for the current machine's RAM."""
+    from ..local_llm import ModelManager
+    mgr  = ModelManager()
+    recs = mgr.recommend_for_hardware()
+    return {"status": "ok", "recommended": recs,
+            "models": [mgr.info(m) for m in recs[:5]]}
+
+
+@app.post("/inference/start", response_model=InferenceStartResponse, tags=["inference"])
+async def start_inference(req: InferenceStartRequest) -> InferenceStartResponse:
+    """
+    Start the local llama.cpp inference server with a downloaded model.
+
+    The server exposes an OpenAI-compatible API at http://localhost:8090/v1
+    which is then used by the VoxelForge LLM router as the 'local' provider.
+
+    n_gpu_layers: 0 = CPU only, -1 = all layers on GPU, N = partial offload
+    """
+    try:
+        from ..local_llm import InferenceServer, ModelManager, detect_optimal_threads
+        srv = _get_inference_server()
+        if req.threads == 0:
+            threads = detect_optimal_threads()
+        else:
+            threads = req.threads
+        srv.threads = threads
+        srv.n_gpu_layers = req.n_gpu_layers
+        srv.context_size = req.context_size
+
+        ok = srv.start(req.model_id, wait_secs=60)
+        return InferenceStartResponse(
+            status   = "ok" if ok else "error",
+            model_id = req.model_id,
+            base_url = srv.base_url,
+            port     = srv.port,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/inference/stop", tags=["inference"])
+async def stop_inference() -> Dict[str, Any]:
+    """Stop the local llama.cpp inference server."""
+    srv = _get_inference_server()
+    srv.stop()
+    return {"status": "ok"}
+
+
+@app.get("/inference/status", response_model=InferenceStatusResponse, tags=["inference"])
+async def inference_status() -> InferenceStatusResponse:
+    """Check whether the local inference server is running."""
+    srv = _get_inference_server()
+    h   = srv.health()
+    return InferenceStatusResponse(
+        running  = srv.running,
+        model_id = srv._model_id,
+        base_url = srv.base_url,
+        port     = srv.port,
+    )
+
+
+@app.post("/inference/chat", response_model=InferenceChatResponse, tags=["inference"])
+async def inference_chat(req: InferenceChatRequest) -> InferenceChatResponse:
+    """
+    Chat with the currently running local model.
+
+    Requires the inference server to be started first via POST /inference/start.
+    Falls back to the cloud LLM router if local server is not running.
+    """
+    srv = _get_inference_server()
+    if srv.running:
+        text = srv.chat(
+            req.prompt,
+            system      = req.system or None,
+            max_tokens  = req.max_tokens,
+            temperature = req.temperature,
+        )
+        provider = f"local/{srv._model_id}"
+    else:
+        # Fallback to cloud LLM router
+        from ..llm_router import get_router
+        resp = get_router().chat(
+            req.prompt,
+            system      = req.system or None,
+            max_tokens  = req.max_tokens,
+            temperature = req.temperature,
+        )
+        text     = resp.text
+        provider = f"{resp.provider}/{resp.model}"
+
+    return InferenceChatResponse(
+        status   = "ok",
+        text     = text,
+        model_id = srv._model_id or "cloud",
+        provider = provider,
+    )
+
+
+@app.get("/inference/install-status", tags=["inference"])
+async def inference_install_status() -> Dict[str, Any]:
+    """Check whether llama.cpp (llama-server) is installed and on PATH."""
+    from ..local_llm import find_llama_server, detect_gpu_backend
+    server_bin = find_llama_server()
+    return {
+        "status":      "ok",
+        "installed":   server_bin is not None,
+        "binary_path": server_bin or "",
+        "gpu_backend": detect_gpu_backend(),
+    }
 
 
 # ---------------------------------------------------------------------------

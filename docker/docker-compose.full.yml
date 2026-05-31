@@ -1,0 +1,132 @@
+version: "3.9"
+
+# VoxelForge Studio — Full Stack
+# =================================
+# Runs the complete VoxelForge Studio:
+#   • voxelforge-api       FastAPI REST server + web dashboard (port 8080)
+#   • voxelforge-inference llama.cpp local inference server   (port 8090)
+#
+# Usage:
+#   docker compose -f docker/docker-compose.full.yml up -d
+#
+# GPU (NVIDIA):
+#   VFE_GPU_LAYERS=35 docker compose -f docker/docker-compose.full.yml \
+#     --profile gpu up -d
+#
+# Download a model first (run once):
+#   docker compose -f docker/docker-compose.full.yml run --rm \
+#     voxelforge-api voxelforge model download llama3.2-3b
+
+x-common-env: &common-env
+  VOXELFORGE_ASSETS_DIR: /app/generated_assets
+  VFE_MODELS_DIR:        /models
+  # LLM routing — prefer local inference when available
+  LLM_PROVIDER:          local
+  LLM_API_BASE:          http://voxelforge-inference:8090/v1
+  LLM_API_KEY:           "no-key-needed-for-local"
+
+services:
+
+  # ── VoxelForge API Server + Web Dashboard ─────────────────────────
+  voxelforge-api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: voxelforge-api:latest
+    container_name: voxelforge_api
+    ports:
+      - "8080:8080"
+    volumes:
+      - assets:/app/generated_assets
+      - models:/models
+    environment:
+      <<: *common-env
+      OPENROUTER_API_KEY:  "${OPENROUTER_API_KEY:-}"
+      OPENAI_API_KEY:      "${OPENAI_API_KEY:-}"
+      GROQ_API_KEY:        "${GROQ_API_KEY:-}"
+      GEMINI_API_KEY:      "${GEMINI_API_KEY:-}"
+    depends_on:
+      voxelforge-inference:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/health"]
+      interval: 15s
+      timeout:  5s
+      retries:  3
+
+  # ── Local llama.cpp Inference Server (CPU) ───────────────────────
+  voxelforge-inference:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.inference
+    image: voxelforge-inference:latest
+    container_name: voxelforge_inference
+    ports:
+      - "8090:8090"
+    volumes:
+      - models:/models
+    environment:
+      VFE_SERVER_HOST:   "0.0.0.0"
+      VFE_SERVER_PORT:   "8090"
+      VFE_N_GPU_LAYERS:  "0"
+      VFE_CTX_SIZE:      "4096"
+      VFE_THREADS:       "${VFE_THREADS:-4}"
+      VFE_MODEL_FILE:    "${VFE_MODEL_FILE:-}"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8090/health"]
+      interval: 10s
+      timeout:  5s
+      retries:  12
+      start_period: 60s
+
+  # ── GPU variant (NVIDIA) — activate with --profile gpu ───────────
+  voxelforge-inference-gpu:
+    profiles: ["gpu"]
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.inference
+      args:
+        CUDA: "1"
+    image: voxelforge-inference-cuda:latest
+    container_name: voxelforge_inference_gpu
+    ports:
+      - "8090:8090"
+    volumes:
+      - models:/models
+    environment:
+      VFE_SERVER_HOST:   "0.0.0.0"
+      VFE_SERVER_PORT:   "8090"
+      VFE_N_GPU_LAYERS:  "${VFE_GPU_LAYERS:-35}"
+      VFE_CTX_SIZE:      "8192"
+      VFE_THREADS:       "4"
+      VFE_MODEL_FILE:    "${VFE_MODEL_FILE:-}"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8090/health"]
+      interval: 10s
+      timeout:  5s
+      retries:  12
+      start_period: 90s
+
+volumes:
+  assets:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: "${PWD}/docker/output"
+  models:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: "${VFE_MODELS_DIR:-${HOME}/.voxelforge/models}"

@@ -1,0 +1,88 @@
+# VoxelForge — Local Inference Server
+# =====================================
+# Builds llama.cpp from source with CPU (AVX2/AVX512) support.
+# For GPU support use the CUDA variant: docker build --build-arg CUDA=1
+#
+# Build CPU:   docker build -f docker/Dockerfile.inference -t voxelforge-inference .
+# Build CUDA:  docker build -f docker/Dockerfile.inference --build-arg CUDA=1 -t voxelforge-inference-cuda .
+# Run:         docker run -p 8090:8090 -v $HOME/.voxelforge/models:/models voxelforge-inference
+
+ARG CUDA=0
+ARG LLAMA_CPP_TAG=b5172
+
+# ---------------------------------------------------------------------------
+# Stage 1 — build llama.cpp from source
+# ---------------------------------------------------------------------------
+FROM ubuntu:24.04 AS builder
+
+ARG CUDA
+ARG LLAMA_CPP_TAG
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git cmake build-essential ninja-build \
+    libssl-dev zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Optionally install CUDA toolkit
+RUN if [ "$CUDA" = "1" ]; then \
+      apt-get update && apt-get install -y --no-install-recommends \
+        cuda-toolkit-12-4 && rm -rf /var/lib/apt/lists/*; \
+    fi
+
+WORKDIR /build
+
+RUN git clone --depth 1 --branch "${LLAMA_CPP_TAG}" \
+    https://github.com/ggerganov/llama.cpp.git llama.cpp || \
+    git clone --depth 1 https://github.com/ggerganov/llama.cpp.git llama.cpp
+
+WORKDIR /build/llama.cpp
+
+RUN cmake -B build \
+      -DLLAMA_BUILD_SERVER=ON \
+      -DBUILD_SHARED_LIBS=OFF \
+      -DCMAKE_BUILD_TYPE=Release \
+      $(if [ "$CUDA" = "1" ]; then echo "-DGGML_CUDA=ON"; fi) \
+      -DGGML_AVX2=ON \
+    && cmake --build build --config Release --target llama-server \
+             -j "$(nproc)"
+
+# ---------------------------------------------------------------------------
+# Stage 2 — runtime image
+# ---------------------------------------------------------------------------
+FROM ubuntu:24.04 AS runtime
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgomp1 curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy llama-server binary
+COPY --from=builder /build/llama.cpp/build/bin/llama-server /usr/local/bin/llama-server
+RUN chmod +x /usr/local/bin/llama-server
+
+# Model storage directory
+RUN mkdir -p /models
+VOLUME ["/models"]
+
+# Default config via environment variables
+ENV VFE_MODEL_PATH=/models
+ENV VFE_SERVER_HOST=0.0.0.0
+ENV VFE_SERVER_PORT=8090
+ENV VFE_N_GPU_LAYERS=0
+ENV VFE_CTX_SIZE=4096
+ENV VFE_THREADS=4
+ENV VFE_MODEL_FILE=""
+
+EXPOSE 8090
+
+# Entrypoint: start llama-server with env-based config
+COPY docker/inference_entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+HEALTHCHECK --interval=10s --timeout=5s --retries=6 \
+    CMD curl -sf http://localhost:${VFE_SERVER_PORT}/health || exit 1
+
+ENTRYPOINT ["/entrypoint.sh"]

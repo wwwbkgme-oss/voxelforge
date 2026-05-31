@@ -218,6 +218,21 @@ _PROVIDERS: List[ProviderDef] = [
         },
         free_note = "Local inference — free if hardware available",
     ),
+    # VoxelForge built-in llama.cpp server (highest priority when running)
+    ProviderDef(
+        name     = "local",
+        base_url = "",   # set from VFE_INFERENCE_URL env var or default port
+        env_key  = "VFE_INFERENCE_URL",
+        priority = 0,   # always try first if configured
+        models   = {
+            "default":  "local-model",
+            "fast":     "local-model",
+            "code":     "local-model",
+            "creative": "local-model",
+            "small":    "local-model",
+        },
+        free_note = "VoxelForge local llama.cpp server (offline, free)",
+    ),
 ]
 
 _PROVIDER_MAP: Dict[str, ProviderDef] = {p.name: p for p in _PROVIDERS}
@@ -591,9 +606,19 @@ class LLMRouter:
         """Return the API key for a provider (env var or fallback chain)."""
         val = os.environ.get(pdef.env_key, "")
         if pdef.name == "ollama":
-            # Ollama uses base URL — if set, key is the URL itself
             url = os.environ.get("OLLAMA_BASE_URL", "")
             return url or ""
+        if pdef.name == "local":
+            # Local llama.cpp: use VFE_INFERENCE_URL or default to localhost:8090
+            url = os.environ.get("VFE_INFERENCE_URL", "")
+            if not url:
+                # Auto-detect: try to ping the default local port
+                try:
+                    requests.get("http://localhost:8090/health", timeout=0.5)
+                    return "http://localhost:8090"  # non-empty = available
+                except Exception:
+                    return ""  # not running
+            return url
         # Also accept generic LLM_API_KEY as universal fallback
         if not val and pdef.name in ("groq", "together", "openrouter"):
             val = os.environ.get("LLM_API_KEY", "")
