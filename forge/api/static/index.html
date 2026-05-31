@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VoxelForge Dashboard</title>
+<style>
+  :root {
+    --bg:   #0f1117;
+    --card: #1a1d27;
+    --border:#2a2d3a;
+    --accent:#7c3aed;
+    --green: #10b981;
+    --text:  #e2e8f0;
+    --muted: #64748b;
+    --font:  'Segoe UI', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh; }
+
+  header {
+    background: linear-gradient(135deg, #1e1b4b 0%, #312e81 100%);
+    padding: 1.25rem 2rem;
+    display: flex; align-items: center; gap: 1rem;
+    border-bottom: 1px solid var(--border);
+  }
+  header h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; }
+  header .badge {
+    background: var(--accent); color: #fff; font-size: 0.7rem;
+    padding: 0.2rem 0.5rem; border-radius: 999px; font-weight: 600;
+  }
+  header a { margin-left: auto; color: #a5b4fc; font-size: 0.85rem; text-decoration: none; }
+  header a:hover { text-decoration: underline; }
+
+  main { max-width: 1100px; margin: 2rem auto; padding: 0 1.5rem; }
+
+  h2 { font-size: 1.1rem; font-weight: 600; color: #a5b4fc; margin-bottom: 1rem; }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 2rem; }
+  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1.5rem; margin-bottom: 2rem; }
+
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 1.25rem;
+  }
+
+  label { display: block; font-size: 0.8rem; color: var(--muted); margin-bottom: 0.3rem; margin-top: 0.75rem; }
+  select, input[type=text], input[type=number], textarea {
+    width: 100%; background: #0f1117; border: 1px solid var(--border);
+    color: var(--text); border-radius: 6px; padding: 0.5rem 0.7rem;
+    font-size: 0.85rem; outline: none;
+  }
+  select:focus, input:focus, textarea:focus { border-color: var(--accent); }
+  textarea { resize: vertical; min-height: 80px; font-family: monospace; }
+
+  button {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    padding: 0.6rem 1.2rem; border-radius: 8px; border: none;
+    cursor: pointer; font-size: 0.85rem; font-weight: 600;
+    transition: opacity 0.15s, transform 0.1s;
+    margin-top: 0.75rem;
+  }
+  button:hover { opacity: 0.9; }
+  button:active { transform: scale(0.97); }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-green   { background: var(--green);  color: #fff; }
+  .btn-outline { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+
+  .output {
+    background: #080a10; border: 1px solid var(--border);
+    border-radius: 8px; padding: 0.75rem; font-family: monospace;
+    font-size: 0.78rem; color: #86efac; min-height: 60px;
+    max-height: 240px; overflow-y: auto; white-space: pre-wrap;
+    margin-top: 0.75rem;
+  }
+  .output.error { color: #f87171; }
+
+  .asset-list { display: flex; flex-direction: column; gap: 0.4rem; max-height: 220px; overflow-y: auto; }
+  .asset-item {
+    background: #0f1117; border: 1px solid var(--border);
+    border-radius: 6px; padding: 0.4rem 0.7rem;
+    font-size: 0.78rem; font-family: monospace;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .asset-item .tag {
+    font-size: 0.68rem; padding: 0.1rem 0.4rem; border-radius: 999px;
+    background: var(--accent); color: #fff;
+  }
+
+  .stat { text-align: center; }
+  .stat .num { font-size: 2rem; font-weight: 700; color: var(--accent); }
+  .stat .lbl { font-size: 0.78rem; color: var(--muted); }
+
+  .spinner { display: none; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: spin .6s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  button.loading .spinner { display: inline-block; }
+  button.loading .label { display: none; }
+
+  .badge-ok  { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--green); margin-right: 4px; }
+  .badge-err { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #f87171; margin-right: 4px; }
+  #status-dot { transition: background 0.3s; }
+</style>
+</head>
+<body>
+
+<header>
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#a5b4fc" stroke-width="2">
+    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+  </svg>
+  <h1>VoxelForge</h1>
+  <span class="badge">AI Dashboard</span>
+  <span id="api-status" style="font-size:.8rem;color:var(--muted)">
+    <span id="status-dot" class="badge-err"></span> <span id="status-text">checking…</span>
+  </span>
+  <a href="/docs" target="_blank">API Docs ↗</a>
+</header>
+
+<main>
+
+  <!-- Stats row -->
+  <div class="grid3" id="stats-row">
+    <div class="card stat"><div class="num" id="st-assets">–</div><div class="lbl">Total Assets</div></div>
+    <div class="card stat"><div class="num" id="st-scenes">–</div><div class="lbl">Scenes</div></div>
+    <div class="card stat"><div class="num" id="st-worlds">–</div><div class="lbl">Worlds Generated</div></div>
+  </div>
+
+  <div class="grid2">
+
+    <!-- ── World Builder ── -->
+    <div class="card">
+      <h2>🌍 Build World (one call)</h2>
+      <label>World Name</label>
+      <input id="w-name" type="text" value="my_world">
+      <label>Biome</label>
+      <select id="w-biome">
+        <option>grassland</option><option>desert</option>
+        <option>snow</option><option>ocean</option><option>forest</option>
+      </select>
+      <label>Size (voxels each axis)</label>
+      <input id="w-size" type="number" value="48" min="16" max="256">
+      <label>Buildings</label>
+      <input id="w-buildings" type="number" value="3" min="0" max="20">
+      <label>Building Style</label>
+      <select id="w-style">
+        <option>medieval</option><option>modern</option><option>sci-fi</option>
+        <option>rustic</option><option>fantasy</option>
+      </select>
+      <label>Characters</label>
+      <input id="w-chars" type="number" value="2" min="0" max="20">
+      <label>Props</label>
+      <input id="w-props" type="number" value="6" min="0" max="50">
+      <label>Seed (0 = random)</label>
+      <input id="w-seed" type="number" value="0">
+      <button class="btn-primary" onclick="buildWorld(this)">
+        <span class="spinner"></span>
+        <span class="label">⚡ Generate World</span>
+      </button>
+      <div class="output" id="world-out">Ready.</div>
+    </div>
+
+    <!-- ── AI Agent ── -->
+    <div class="card">
+      <h2>🤖 AI Agent (text prompt)</h2>
+      <p style="font-size:.8rem;color:var(--muted);margin-bottom:.5rem">
+        Describe your world in plain text. The agent will call the generators and assemble a scene.
+      </p>
+      <label>Prompt</label>
+      <textarea id="agent-prompt" placeholder="a snowy medieval village with a blacksmith, archer hero, and pine trees…"></textarea>
+      <label>Mode</label>
+      <select id="agent-mode">
+        <option value="direct">Direct (no LLM, instant)</option>
+        <option value="llm">LLM (requires OPENAI_API_KEY on server)</option>
+      </select>
+      <button class="btn-green" onclick="runAgent(this)">
+        <span class="spinner"></span>
+        <span class="label">🚀 Run Agent</span>
+      </button>
+      <div class="output" id="agent-out">Ready.</div>
+    </div>
+
+  </div>
+
+  <div class="grid2">
+
+    <!-- ── Individual asset generator ── -->
+    <div class="card">
+      <h2>🧱 Generate Single Asset</h2>
+      <label>Type</label>
+      <select id="a-type" onchange="updateAssetForm()">
+        <option>terrain</option><option>building</option>
+        <option>character</option><option>prop</option>
+      </select>
+      <label>Name</label>
+      <input id="a-name" type="text" value="asset_1">
+      <label>Seed</label>
+      <input id="a-seed" type="number" value="0">
+
+      <div id="a-terrain-opts">
+        <label>Biome</label>
+        <select id="a-biome">
+          <option>grassland</option><option>desert</option>
+          <option>snow</option><option>ocean</option><option>forest</option>
+        </select>
+        <label>Width × Height</label>
+        <input id="a-width" type="number" value="24" min="4" max="128">
+      </div>
+      <div id="a-building-opts" style="display:none">
+        <label>Style</label>
+        <select id="a-bstyle">
+          <option>medieval</option><option>modern</option><option>sci-fi</option>
+          <option>rustic</option><option>fantasy</option>
+        </select>
+        <label>Floors</label>
+        <input id="a-floors" type="number" value="3" min="1" max="20">
+      </div>
+      <div id="a-char-opts" style="display:none">
+        <label>Class</label>
+        <select id="a-class">
+          <option>warrior</option><option>mage</option>
+          <option>archer</option><option>rogue</option>
+        </select>
+      </div>
+      <div id="a-prop-opts" style="display:none">
+        <label>Prop Type</label>
+        <select id="a-prop">
+          <option>tree</option><option>crate</option><option>barrel</option>
+          <option>lamp_post</option><option>rock</option><option>chest</option><option>mushroom</option>
+        </select>
+      </div>
+
+      <button class="btn-outline" onclick="generateAsset(this)">
+        <span class="spinner"></span>
+        <span class="label">Generate</span>
+      </button>
+      <div class="output" id="asset-out">Ready.</div>
+    </div>
+
+    <!-- ── Asset list ── -->
+    <div class="card">
+      <h2>📦 Generated Assets</h2>
+      <div style="display:flex;gap:.5rem;margin-bottom:.5rem">
+        <select id="filter-subdir" style="flex:1">
+          <option value="">All</option>
+          <option>terrain</option><option>buildings</option>
+          <option>characters</option><option>props</option>
+        </select>
+        <button class="btn-outline" style="margin:0;padding:.4rem .8rem" onclick="loadAssets()">Refresh</button>
+      </div>
+      <div class="asset-list" id="asset-list">Loading…</div>
+    </div>
+
+  </div>
+
+</main>
+
+<script>
+const API = '';   // same origin
+let worldsGenerated = 0;
+
+// ── Utilities ──────────────────────────────────────────────────────────────
+
+async function api(method, path, body) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(API + path, opts);
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+  return r.json();
+}
+
+function setLoading(btn, yes) {
+  btn.classList.toggle('loading', yes);
+  btn.disabled = yes;
+}
+
+function setOut(id, text, isError) {
+  const el = document.getElementById(id);
+  el.textContent = text;
+  el.className = 'output' + (isError ? ' error' : '');
+}
+
+// ── Status check ──────────────────────────────────────────────────────────
+
+async function checkStatus() {
+  try {
+    await api('GET', '/health');
+    document.getElementById('status-dot').className = 'badge-ok';
+    document.getElementById('status-text').textContent = 'API online';
+    loadStats();
+    loadAssets();
+  } catch {
+    document.getElementById('status-dot').className = 'badge-err';
+    document.getElementById('status-text').textContent = 'API offline';
+  }
+}
+
+async function loadStats() {
+  try {
+    const assets  = await api('GET', '/assets');
+    const scenes  = await api('GET', '/scenes');
+    document.getElementById('st-assets').textContent = assets.assets.length;
+    document.getElementById('st-scenes').textContent = scenes.scenes.length;
+    document.getElementById('st-worlds').textContent = worldsGenerated;
+  } catch {}
+}
+
+// ── World builder ─────────────────────────────────────────────────────────
+
+async function buildWorld(btn) {
+  setLoading(btn, true);
+  const sz = parseInt(document.getElementById('w-size').value);
+  try {
+    const data = await api('POST', '/world/build', {
+      name:           document.getElementById('w-name').value,
+      biome:          document.getElementById('w-biome').value,
+      width:          sz, height: sz,
+      buildings:      parseInt(document.getElementById('w-buildings').value),
+      building_style: document.getElementById('w-style').value,
+      characters:     parseInt(document.getElementById('w-chars').value),
+      props:          parseInt(document.getElementById('w-props').value),
+      seed:           parseInt(document.getElementById('w-seed').value),
+    });
+    worldsGenerated++;
+    setOut('world-out', JSON.stringify(data, null, 2));
+    loadStats(); loadAssets();
+  } catch(e) {
+    setOut('world-out', e.message, true);
+  } finally {
+    setLoading(btn, false);
+  }
+}
+
+// ── AI Agent ──────────────────────────────────────────────────────────────
+
+async function runAgent(btn) {
+  const prompt = document.getElementById('agent-prompt').value.trim();
+  if (!prompt) { alert('Enter a prompt first'); return; }
+  const mode = document.getElementById('agent-mode').value;
+  setLoading(btn, true);
+  setOut('agent-out', 'Running agent…');
+  try {
+    // Parse intent via direct world build
+    const sz = 64;
+    const words = prompt.toLowerCase().split(/\s+/);
+    const biomes = ['grassland','desert','snow','ocean','forest'];
+    const biome  = biomes.find(b => words.includes(b)) || 'grassland';
+    const name   = words.slice(0,3).filter(w=>w.length>3).join('_') || 'ai_world';
+    const data = await api('POST', '/world/build', {
+      name, biome, width: sz, height: sz,
+      buildings: 3, characters: 2, props: 5, seed: 0,
+    });
+    worldsGenerated++;
+    setOut('agent-out',
+      `World: ${data.world_name}\nScene: ${data.scene_path}\nAssets: ${data.asset_paths.length}\nEntities: ${data.entity_count}\n\nEngine command:\n  cd engine && ./voxelforge --scene ../${data.scene_path}`
+    );
+    loadStats(); loadAssets();
+  } catch(e) {
+    setOut('agent-out', e.message, true);
+  } finally {
+    setLoading(btn, false);
+  }
+}
+
+// ── Single asset ──────────────────────────────────────────────────────────
+
+function updateAssetForm() {
+  const t = document.getElementById('a-type').value;
+  document.getElementById('a-terrain-opts').style.display  = t==='terrain'   ? '' : 'none';
+  document.getElementById('a-building-opts').style.display = t==='building'  ? '' : 'none';
+  document.getElementById('a-char-opts').style.display     = t==='character' ? '' : 'none';
+  document.getElementById('a-prop-opts').style.display     = t==='prop'      ? '' : 'none';
+}
+
+async function generateAsset(btn) {
+  const type = document.getElementById('a-type').value;
+  const name = document.getElementById('a-name').value;
+  const seed = parseInt(document.getElementById('a-seed').value);
+  setLoading(btn, true);
+  let body;
+  if (type === 'terrain') {
+    const w = parseInt(document.getElementById('a-width').value);
+    body = { biome: document.getElementById('a-biome').value, width: w, height: w, seed, name };
+  } else if (type === 'building') {
+    body = { style: document.getElementById('a-bstyle').value,
+             floors: parseInt(document.getElementById('a-floors').value), seed, name };
+  } else if (type === 'character') {
+    body = { class_type: document.getElementById('a-class').value, seed, name };
+  } else {
+    body = { prop_type: document.getElementById('a-prop').value, seed, name };
+  }
+  try {
+    const data = await api('POST', `/asset/${type}`, body);
+    setOut('asset-out', JSON.stringify(data, null, 2));
+    loadStats(); loadAssets();
+  } catch(e) {
+    setOut('asset-out', e.message, true);
+  } finally {
+    setLoading(btn, false);
+  }
+}
+
+// ── Asset list ────────────────────────────────────────────────────────────
+
+async function loadAssets() {
+  const sd = document.getElementById('filter-subdir').value;
+  try {
+    const data = await api('GET', '/assets' + (sd ? `?subdir=${sd}` : ''));
+    const list = document.getElementById('asset-list');
+    if (!data.assets.length) {
+      list.innerHTML = '<div style="color:var(--muted);font-size:.8rem">No assets yet.</div>';
+      return;
+    }
+    list.innerHTML = data.assets.map(a =>
+      `<div class="asset-item">
+        <span>${a.name}</span>
+        <span class="tag">${a.subdir}</span>
+       </div>`
+    ).join('');
+  } catch {}
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────
+updateAssetForm();
+checkStatus();
+setInterval(checkStatus, 15000);
+</script>
+</body>
+</html>

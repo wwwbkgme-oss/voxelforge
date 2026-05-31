@@ -30,7 +30,8 @@ from typing import Any, Dict, List
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from ..voxel import Palette, VoxelModel
 from ..scene import Scene
@@ -78,6 +79,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Serve the web dashboard at /
+_static_dir = os.path.join(os.path.dirname(__file__), "static")
+if os.path.isdir(_static_dir):
+    app.mount("/ui", StaticFiles(directory=_static_dir, html=True), name="ui")
+
 
 def _palette() -> Palette:
     return Palette.natural()
@@ -109,9 +115,10 @@ def _engine_rel(full_path: str) -> str:
 # Health
 # ---------------------------------------------------------------------------
 
-@app.get("/", tags=["health"])
-async def root() -> Dict[str, str]:
-    return {"status": "ok", "service": "VoxelForge API", "version": "1.0.0"}
+@app.get("/", tags=["health"], include_in_schema=False)
+async def root():
+    """Redirect browser requests to the web dashboard."""
+    return RedirectResponse(url="/ui/index.html")
 
 
 @app.get("/health", tags=["health"])
