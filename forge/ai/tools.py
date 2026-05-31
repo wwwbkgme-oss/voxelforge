@@ -255,6 +255,21 @@ def _local_build_world(name="world", biome="grassland", width=64, height=64,
             "seed": seed}
 
 
+def _local_generate_dungeon(width=48, height=48, wall_height=3,
+                              style="stone", seed=0, name="dungeon", **_) -> Dict[str, Any]:
+    from ..voxel import Palette
+    from ..generators.dungeon import DungeonGenerator
+    gen   = DungeonGenerator(Palette.natural(), seed=seed)
+    model = gen.generate(width=width, height=height,
+                         wall_height=wall_height, style=style)
+    model.name = name
+    path = _local_asset_path("dungeons", name)
+    model.save(path)
+    return {"status": "ok", "name": name, "path": _engine_rel(path),
+            "voxel_count": model.voxel_count(),
+            "dimensions": [model.width, model.height, model.depth]}
+
+
 def _local_list_assets(subdir="", **_) -> Dict[str, Any]:
     import glob
     pattern = os.path.join(_ASSETS_DIR, subdir or "**", "*.vox")
@@ -276,6 +291,7 @@ _LOCAL_DISPATCH: Dict[str, Any] = {
     "generate_building":  _local_generate_building,
     "generate_character": _local_generate_character,
     "generate_prop":      _local_generate_prop,
+    "generate_dungeon":   _local_generate_dungeon,
     "build_scene":        _local_build_scene,
     "build_world":        _local_build_world,
     "list_assets":        _local_list_assets,
@@ -314,6 +330,14 @@ def generate_prop(prop_type="tree", variant="", seed=0, name="") -> Dict[str, An
     """Generate a procedural voxel prop and save it as a .vox file."""
     return _post("/asset/prop", {"prop_type": prop_type, "variant": variant,
                                   "seed": seed, "name": name})
+
+
+def generate_dungeon(width=48, height=48, wall_height=3,
+                      style="stone", seed=0, name="dungeon") -> Dict[str, Any]:
+    """Generate a BSP dungeon/cave level and save it as a .vox file."""
+    return _post("/asset/dungeon", {"width": width, "height": height,
+                                     "wall_height": wall_height, "style": style,
+                                     "seed": seed, "name": name})
 
 
 def build_scene(scene_name, entities, lights=None,
@@ -355,6 +379,7 @@ _HTTP_MAP = {
     "generate_building":  generate_building,
     "generate_character": generate_character,
     "generate_prop":      generate_prop,
+    "generate_dungeon":   generate_dungeon,
     "build_scene":        build_scene,
     "build_world":        build_world,
     "list_assets":        list_assets,
@@ -549,6 +574,25 @@ TOOLS: List[Dict[str, Any]] = [
                     "seed":           {"type": "integer", "default": 0},
                 },
                 "required": ["name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "generate_dungeon",
+            "description": "Generate a BSP dungeon or cave level and save it as a .vox file.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "width":       {"type": "integer", "default": 48},
+                    "height":      {"type": "integer", "default": 48},
+                    "wall_height": {"type": "integer", "default": 3},
+                    "style":       {"type": "string", "enum": ["stone","dungeon","cave","ice"]},
+                    "seed":        {"type": "integer", "default": 0},
+                    "name":        {"type": "string",  "default": "dungeon"},
+                },
+                "required": [],
             },
         },
     },

@@ -18,7 +18,14 @@ Quick-start
 """
 
 from .voxel import VoxelModel, Palette  # noqa: F401
-from .scene import Scene, Entity  # noqa: F401
+from .scene import Scene  # noqa: F401
+from .generators import (  # noqa: F401
+    TerrainGenerator,
+    BuildingGenerator,
+    CharacterGenerator,
+    PropGenerator,
+    DungeonGenerator,
+)
 
 __version__ = "1.0.0"
 __author__  = "VoxelForge"
