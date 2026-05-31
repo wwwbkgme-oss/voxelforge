@@ -162,12 +162,13 @@ def _local_build_scene(scene_name, entities, lights=None,
             position=tuple(light.get("position", [0, 10, 0])),
             color=tuple(light.get("color", [1, 1, 1])),
             intensity=float(light.get("intensity", 1.0)),
-            radius=float(light.get("radius", 15.0)),
+            range_=float(light.get("range", light.get("range_", 100.0))),
+            hue_shift=float(light.get("hueShift", 0.0)),
         )
     path = _local_scene_path(scene_name)
     scene.save(path)
     return {"status": "ok", "scene_name": scene_name, "path": _engine_rel(path),
-            "entity_count": len(scene.entities)}
+            "entity_count": scene.entity_count}
 
 
 def _local_build_world(name="world", biome="grassland", width=64, height=64,
@@ -182,7 +183,7 @@ def _local_build_world(name="world", biome="grassland", width=64, height=64,
 
     rng   = random.Random(seed)
     pal   = Palette.natural()
-    scene = Scene(background_color=(0.05, 0.15, 0.30), ambient_intensity=0.35)
+    scene = Scene(background_color=(0.05, 0.15, 0.30))
     asset_paths: List[str] = []
 
     # Terrain
@@ -242,7 +243,7 @@ def _local_build_world(name="world", biome="grassland", width=64, height=64,
     scene.add_point_light("sun",
         position=(float(width//2), float(height//2), 40.0),
         color=(1.0, 0.95, 0.85), intensity=2.0,
-        radius=float(max(width, height) * 2))
+        range_=float(max(width, height) * 2))
 
     s_path = _local_scene_path(name)
     scene.save(s_path)
@@ -250,7 +251,7 @@ def _local_build_world(name="world", biome="grassland", width=64, height=64,
     return {"status": "ok", "world_name": name,
             "scene_path": _engine_rel(s_path),
             "asset_paths": asset_paths,
-            "entity_count": len(scene.entities),
+            "entity_count": scene.entity_count,
             "seed": seed}
 
 

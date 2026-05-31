@@ -276,8 +276,7 @@ async def build_scene(req: SceneBuildRequest) -> SceneResponse:
     The output JSON is directly loadable by the C engine.
     """
     try:
-        scene = Scene(background_color=req.background_color,
-                      ambient_intensity=req.ambient_intensity)
+        scene = Scene(background_color=req.background_color)
 
         for ent in req.entities:
             scene.add_voxel_model(
@@ -285,7 +284,6 @@ async def build_scene(req: SceneBuildRequest) -> SceneResponse:
                 vox_path = ent.asset,
                 position = ent.position,
                 rotation = ent.rotation,
-                scale    = ent.scale,
             )
 
         for light in req.lights:
@@ -294,7 +292,8 @@ async def build_scene(req: SceneBuildRequest) -> SceneResponse:
                 position  = light.position,
                 color     = light.color,
                 intensity = light.intensity,
-                radius    = light.radius,
+                range_    = light.range_,
+                hue_shift = light.hue_shift,
             )
 
         path = _scene_path(req.scene_name)
@@ -303,7 +302,7 @@ async def build_scene(req: SceneBuildRequest) -> SceneResponse:
             status       = "ok",
             scene_name   = req.scene_name,
             path         = _engine_rel(path),
-            entity_count = len(scene.entities),
+            entity_count = scene.entity_count,
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -347,8 +346,7 @@ async def build_world(req: WorldBuildRequest) -> WorldResponse:
         pal         = _palette()
         asset_paths: List[str] = []
         scene       = Scene(
-            background_color  = _biome_sky(req.biome.value),
-            ambient_intensity = 0.35,
+            background_color = _biome_sky(req.biome.value),
         )
 
         # --- Terrain ---
@@ -438,7 +436,7 @@ async def build_world(req: WorldBuildRequest) -> WorldResponse:
             position  = (float(req.width // 2), float(req.height // 2), 40.0),
             color     = (1.0, 0.95, 0.85),
             intensity = 2.0,
-            radius    = max(req.width, req.height) * 2.0,
+            range_    = float(max(req.width, req.height) * 2),
         )
 
         s_path = _scene_path(req.name)
@@ -449,7 +447,7 @@ async def build_world(req: WorldBuildRequest) -> WorldResponse:
             world_name   = req.name,
             scene_path   = _engine_rel(s_path),
             asset_paths  = asset_paths,
-            entity_count = len(scene.entities),
+            entity_count = scene.entity_count,
             seed         = req.seed,
         )
     except Exception as exc:

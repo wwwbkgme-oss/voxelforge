@@ -111,7 +111,10 @@ class PointLightPlacement(BaseModel):
     position:  Vec3  = (0.0, 10.0, 0.0)
     color:     Vec3  = (1.0, 1.0, 1.0)
     intensity: float = 1.0
-    radius:    float = 15.0
+    range_:    float = Field(100.0, alias="range", description="Light range in world units")
+    hue_shift: float = 0.0
+
+    model_config = {"populate_by_name": True}
 
 
 class SceneBuildRequest(BaseModel):
