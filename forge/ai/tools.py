@@ -7,6 +7,10 @@ Every tool maps 1-to-1 with a REST API endpoint so any LLM that supports
 function calling (GPT-4o, Claude, Gemini, Llama-3 tool-use, etc.) can
 call them natively.
 
+``call_tool`` first tries the running API server; if it is unreachable it
+falls back to calling the Python generators directly — so everything works
+offline without a running server too.
+
 Usage (OpenAI SDK)
 ------------------
 >>> import openai
@@ -17,19 +21,15 @@ Usage (OpenAI SDK)
 ...     messages=[{"role": "user", "content": "Build me a medieval village"}],
 ...     tools=TOOLS,
 ... )
->>> # Execute tool calls:
 >>> for tc in response.choices[0].message.tool_calls or []:
 ...     result = call_tool(tc.function.name, tc.function.arguments)
-
-Using without the API server (direct Python calls)
----------------------------------------------------
->>> result = call_tool("generate_terrain", '{"biome": "grassland", "width": 48}')
 """
 
 from __future__ import annotations
 
 import json
 import os
+import random
 from typing import Any, Dict, List
 
 import requests
@@ -40,6 +40,7 @@ import requests
 # ---------------------------------------------------------------------------
 
 _API_URL = os.environ.get("VOXELFORGE_API_URL", "http://localhost:8080")
+_ASSETS_DIR = os.environ.get("VOXELFORGE_ASSETS_DIR", "generated_assets")
 
 
 def _post(endpoint: str, body: Dict[str, Any]) -> Dict[str, Any]:
@@ -57,120 +58,285 @@ def _get(endpoint: str, params: Dict[str, Any] | None = None) -> Dict[str, Any]:
     return resp.json()
 
 
+def _api_available() -> bool:
+    """Check if the API server is reachable."""
+    try:
+        requests.get(f"{_API_URL}/health", timeout=2)
+        return True
+    except Exception:
+        return False
+
+
 # ---------------------------------------------------------------------------
-# Tool implementations
+# Local fallback — direct Python generation (no HTTP)
 # ---------------------------------------------------------------------------
 
-def generate_terrain(
-    biome: str = "grassland",
-    width: int = 32,
-    height: int = 32,
-    max_depth: int = 12,
-    seed: int = 0,
-    name: str = "terrain",
-) -> Dict[str, Any]:
+def _local_asset_path(subdir: str, name: str) -> str:
+    d = os.path.join(_ASSETS_DIR, subdir)
+    os.makedirs(d, exist_ok=True)
+    return os.path.join(d, f"{name}.vox")
+
+
+def _local_scene_path(name: str) -> str:
+    d = os.path.join(_ASSETS_DIR, "scenes")
+    os.makedirs(d, exist_ok=True)
+    return os.path.join(d, f"{name}.scene")
+
+
+def _engine_rel(full_path: str) -> str:
+    try:
+        return os.path.relpath(full_path)
+    except ValueError:
+        return full_path
+
+
+def _local_generate_terrain(biome="grassland", width=32, height=32, max_depth=12,
+                              seed=0, name="terrain", **_) -> Dict[str, Any]:
+    from ..voxel import Palette
+    from ..generators.terrain import TerrainGenerator
+    gen   = TerrainGenerator(Palette.natural(), seed=seed)
+    model = gen.generate(width=width, height=height, max_depth=max_depth, biome=biome)
+    model.name = name
+    path = _local_asset_path("terrain", name)
+    model.save(path)
+    return {"status": "ok", "name": name, "path": _engine_rel(path),
+            "voxel_count": model.voxel_count(),
+            "dimensions": [model.width, model.height, model.depth]}
+
+
+def _local_generate_building(style="modern", width=8, depth=8, floors=3,
+                               seed=0, name="building", **_) -> Dict[str, Any]:
+    from ..voxel import Palette
+    from ..generators.buildings import BuildingGenerator
+    gen   = BuildingGenerator(Palette.natural(), seed=seed)
+    model = gen.generate(width=width, depth=depth, floors=floors, style=style, name=name)
+    path  = _local_asset_path("buildings", name)
+    model.save(path)
+    return {"status": "ok", "name": name, "path": _engine_rel(path),
+            "voxel_count": model.voxel_count(),
+            "dimensions": [model.width, model.height, model.depth]}
+
+
+def _local_generate_character(class_type="warrior", skin_tone="tan", hair_color="brown",
+                                armour="chainmail", weapon="sword", seed=0,
+                                name="character", **_) -> Dict[str, Any]:
+    from ..voxel import Palette
+    from ..generators.characters import CharacterGenerator
+    gen   = CharacterGenerator(Palette.natural(), seed=seed)
+    model = gen.generate(class_type=class_type, skin_tone=skin_tone,
+                         hair_color=hair_color, armour=armour, weapon=weapon, name=name)
+    path  = _local_asset_path("characters", name)
+    model.save(path)
+    return {"status": "ok", "name": name, "path": _engine_rel(path),
+            "voxel_count": model.voxel_count(),
+            "dimensions": [model.width, model.height, model.depth]}
+
+
+def _local_generate_prop(prop_type="tree", variant="", seed=0, name="", **kw) -> Dict[str, Any]:
+    from ..voxel import Palette
+    from ..generators.props import PropGenerator
+    gen  = PropGenerator(Palette.natural(), seed=seed)
+    nm   = name or prop_type
+    model= gen.generate(prop_type, variant=variant, name=nm)
+    path = _local_asset_path("props", nm)
+    model.save(path)
+    return {"status": "ok", "name": nm, "path": _engine_rel(path),
+            "voxel_count": model.voxel_count(),
+            "dimensions": [model.width, model.height, model.depth]}
+
+
+def _local_build_scene(scene_name, entities, lights=None,
+                        background_color=None, **_) -> Dict[str, Any]:
+    from ..scene import Scene
+    scene = Scene(background_color=tuple(background_color) if background_color
+                  else (0.0, 0.149, 0.294))
+    for ent in entities:
+        scene.add_voxel_model(
+            ent["name"], ent["asset"],
+            position=tuple(ent.get("position", [0, 0, 0])),
+            rotation=tuple(ent.get("rotation", [0, 0, 0])),
+        )
+    for light in (lights or []):
+        scene.add_point_light(
+            light["name"],
+            position=tuple(light.get("position", [0, 10, 0])),
+            color=tuple(light.get("color", [1, 1, 1])),
+            intensity=float(light.get("intensity", 1.0)),
+            radius=float(light.get("radius", 15.0)),
+        )
+    path = _local_scene_path(scene_name)
+    scene.save(path)
+    return {"status": "ok", "scene_name": scene_name, "path": _engine_rel(path),
+            "entity_count": len(scene.entities)}
+
+
+def _local_build_world(name="world", biome="grassland", width=64, height=64,
+                        buildings=3, building_style="medieval", characters=2,
+                        props=5, seed=0, **_) -> Dict[str, Any]:
+    from ..voxel import Palette
+    from ..generators.terrain import TerrainGenerator
+    from ..generators.buildings import BuildingGenerator
+    from ..generators.characters import CharacterGenerator
+    from ..generators.props import PropGenerator
+    from ..scene import Scene
+
+    rng   = random.Random(seed)
+    pal   = Palette.natural()
+    scene = Scene(background_color=(0.05, 0.15, 0.30), ambient_intensity=0.35)
+    asset_paths: List[str] = []
+
+    # Terrain
+    terrain = TerrainGenerator(pal, seed=seed).generate(
+        width=width, height=height, max_depth=14, biome=biome)
+    terrain.name = f"{name}_terrain"
+    t_path = _local_asset_path("terrain", terrain.name)
+    terrain.save(t_path)
+    asset_paths.append(_engine_rel(t_path))
+    scene.add_voxel_model("terrain", _engine_rel(t_path))
+
+    surface_z = 14.0
+    bgen = BuildingGenerator(pal, seed=seed + 1)
+    for i in range(buildings):
+        b_name = f"{name}_building_{i}"
+        model  = bgen.generate(rng.randint(6, 12), rng.randint(6, 12),
+                                rng.randint(2, 6), style=building_style, name=b_name)
+        p = _local_asset_path("buildings", b_name)
+        model.save(p)
+        asset_paths.append(_engine_rel(p))
+        scene.add_voxel_model(b_name, _engine_rel(p),
+            position=(float(rng.randint(0, max(1, width-10))),
+                      float(rng.randint(0, max(1, height-10))),
+                      surface_z))
+
+    cgen = CharacterGenerator(pal, seed=seed + 2)
+    for i in range(characters):
+        c_name = f"{name}_char_{i}"
+        model  = cgen.generate(
+            rng.choice(["warrior","mage","archer","rogue"]),
+            rng.choice(["light","tan","dark"]),
+            rng.choice(["blonde","brown","black"]),
+            rng.choice(["leather","chainmail","plate"]),
+            rng.choice(["sword","staff","bow"]),
+            name=c_name)
+        p = _local_asset_path("characters", c_name)
+        model.save(p)
+        asset_paths.append(_engine_rel(p))
+        scene.add_voxel_model(c_name, _engine_rel(p),
+            position=(float(rng.randint(0, max(1, width-4))),
+                      float(rng.randint(0, max(1, height-4))),
+                      surface_z))
+
+    pgen = PropGenerator(pal, seed=seed + 3)
+    for i in range(props):
+        p_type = rng.choice(["tree","crate","barrel","rock","mushroom","chest"])
+        p_name = f"{name}_prop_{p_type}_{i}"
+        model  = pgen.generate(p_type, name=p_name)
+        p      = _local_asset_path("props", p_name)
+        model.save(p)
+        asset_paths.append(_engine_rel(p))
+        scene.add_voxel_model(p_name, _engine_rel(p),
+            position=(float(rng.randint(0, max(1, width-8))),
+                      float(rng.randint(0, max(1, height-8))),
+                      surface_z))
+
+    scene.add_point_light("sun",
+        position=(float(width//2), float(height//2), 40.0),
+        color=(1.0, 0.95, 0.85), intensity=2.0,
+        radius=float(max(width, height) * 2))
+
+    s_path = _local_scene_path(name)
+    scene.save(s_path)
+
+    return {"status": "ok", "world_name": name,
+            "scene_path": _engine_rel(s_path),
+            "asset_paths": asset_paths,
+            "entity_count": len(scene.entities),
+            "seed": seed}
+
+
+def _local_list_assets(subdir="", **_) -> Dict[str, Any]:
+    import glob
+    pattern = os.path.join(_ASSETS_DIR, subdir or "**", "*.vox")
+    files   = glob.glob(pattern, recursive=True)
+    return {"assets": [{"path": _engine_rel(f), "name": os.path.splitext(os.path.basename(f))[0]}
+                       for f in sorted(files)]}
+
+
+def _local_list_scenes(**_) -> Dict[str, Any]:
+    import glob
+    files = glob.glob(os.path.join(_ASSETS_DIR, "scenes", "*.scene"))
+    return {"scenes": [{"path": _engine_rel(f),
+                        "name": os.path.splitext(os.path.basename(f))[0]}
+                       for f in sorted(files)]}
+
+
+_LOCAL_DISPATCH: Dict[str, Any] = {
+    "generate_terrain":   _local_generate_terrain,
+    "generate_building":  _local_generate_building,
+    "generate_character": _local_generate_character,
+    "generate_prop":      _local_generate_prop,
+    "build_scene":        _local_build_scene,
+    "build_world":        _local_build_world,
+    "list_assets":        _local_list_assets,
+    "list_scenes":        _local_list_scenes,
+}
+
+
+# ---------------------------------------------------------------------------
+# HTTP-based tool implementations
+# ---------------------------------------------------------------------------
+
+def generate_terrain(biome="grassland", width=32, height=32, max_depth=12,
+                      seed=0, name="terrain") -> Dict[str, Any]:
     """Generate procedural voxel terrain and save it as a .vox file."""
-    return _post("/asset/terrain", {
-        "biome": biome, "width": width, "height": height,
-        "max_depth": max_depth, "seed": seed, "name": name,
-    })
+    return _post("/asset/terrain", {"biome": biome, "width": width, "height": height,
+                                     "max_depth": max_depth, "seed": seed, "name": name})
 
 
-def generate_building(
-    style: str = "modern",
-    width: int = 8,
-    depth: int = 8,
-    floors: int = 3,
-    seed: int = 0,
-    name: str = "building",
-) -> Dict[str, Any]:
+def generate_building(style="modern", width=8, depth=8, floors=3,
+                       seed=0, name="building") -> Dict[str, Any]:
     """Generate a procedural voxel building and save it as a .vox file."""
-    return _post("/asset/building", {
-        "style": style, "width": width, "depth": depth,
-        "floors": floors, "seed": seed, "name": name,
-    })
+    return _post("/asset/building", {"style": style, "width": width, "depth": depth,
+                                      "floors": floors, "seed": seed, "name": name})
 
 
-def generate_character(
-    class_type: str = "warrior",
-    skin_tone: str = "tan",
-    hair_color: str = "brown",
-    armour: str = "chainmail",
-    weapon: str = "sword",
-    seed: int = 0,
-    name: str = "character",
-) -> Dict[str, Any]:
+def generate_character(class_type="warrior", skin_tone="tan", hair_color="brown",
+                        armour="chainmail", weapon="sword", seed=0,
+                        name="character") -> Dict[str, Any]:
     """Generate a procedural voxel humanoid character and save it as a .vox file."""
-    return _post("/asset/character", {
-        "class_type": class_type, "skin_tone": skin_tone,
-        "hair_color": hair_color, "armour": armour, "weapon": weapon,
-        "seed": seed, "name": name,
-    })
+    return _post("/asset/character", {"class_type": class_type, "skin_tone": skin_tone,
+                                       "hair_color": hair_color, "armour": armour,
+                                       "weapon": weapon, "seed": seed, "name": name})
 
 
-def generate_prop(
-    prop_type: str = "tree",
-    variant: str = "",
-    seed: int = 0,
-    name: str = "",
-) -> Dict[str, Any]:
-    """
-    Generate a procedural voxel prop (tree/crate/barrel/lamp_post/rock/chest/mushroom)
-    and save it as a .vox file.
-    """
-    return _post("/asset/prop", {
-        "prop_type": prop_type, "variant": variant,
-        "seed": seed, "name": name,
-    })
+def generate_prop(prop_type="tree", variant="", seed=0, name="") -> Dict[str, Any]:
+    """Generate a procedural voxel prop and save it as a .vox file."""
+    return _post("/asset/prop", {"prop_type": prop_type, "variant": variant,
+                                  "seed": seed, "name": name})
 
 
-def build_scene(
-    scene_name: str,
-    entities: List[Dict[str, Any]],
-    lights: List[Dict[str, Any]] | None = None,
-    background_color: List[float] | None = None,
-) -> Dict[str, Any]:
-    """
-    Construct a VoxelForge scene from entity and light placements.
-
-    Each entity has: name, asset (path), position [x,y,z], rotation [x,y,z].
-    Each light  has: name, position [x,y,z], color [r,g,b], intensity, radius.
-    """
-    body: Dict[str, Any] = {
-        "scene_name": scene_name,
-        "entities": entities,
-        "lights":   lights or [],
-    }
+def build_scene(scene_name, entities, lights=None,
+                 background_color=None) -> Dict[str, Any]:
+    """Construct a VoxelForge scene from entity and light placements."""
+    body: Dict[str, Any] = {"scene_name": scene_name, "entities": entities,
+                             "lights": lights or []}
     if background_color:
         body["background_color"] = background_color
     return _post("/scene/build", body)
 
 
-def build_world(
-    name: str,
-    biome: str = "grassland",
-    width: int = 64,
-    height: int = 64,
-    buildings: int = 3,
-    building_style: str = "medieval",
-    characters: int = 2,
-    props: int = 5,
-    seed: int = 0,
-) -> Dict[str, Any]:
-    """
-    Build a complete game world in one call: terrain + buildings + characters
-    + props + a scene file that ties them all together.
-    Returns paths to the scene file and all individual assets.
-    """
-    return _post("/world/build", {
-        "name": name, "biome": biome, "width": width, "height": height,
-        "buildings": buildings, "building_style": building_style,
-        "characters": characters, "props": props, "seed": seed,
-    })
+def build_world(name, biome="grassland", width=64, height=64, buildings=3,
+                 building_style="medieval", characters=2, props=5,
+                 seed=0) -> Dict[str, Any]:
+    """Build a complete game world in one call."""
+    return _post("/world/build", {"name": name, "biome": biome, "width": width,
+                                   "height": height, "buildings": buildings,
+                                   "building_style": building_style,
+                                   "characters": characters, "props": props, "seed": seed})
 
 
-def list_assets(subdir: str = "") -> Dict[str, Any]:
-    """List all generated .vox assets.  Optionally filter by subdir."""
+def list_assets(subdir="") -> Dict[str, Any]:
+    """List all generated .vox assets."""
     return _get("/assets", {"subdir": subdir} if subdir else {})
 
 
@@ -180,10 +346,10 @@ def list_scenes() -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Tool dispatcher — maps function name → Python function
+# Tool dispatcher
 # ---------------------------------------------------------------------------
 
-_TOOL_MAP = {
+_HTTP_MAP = {
     "generate_terrain":   generate_terrain,
     "generate_building":  generate_building,
     "generate_character": generate_character,
@@ -199,31 +365,47 @@ def call_tool(name: str, arguments: str | Dict[str, Any]) -> Any:
     """
     Execute a VoxelForge tool by name with JSON arguments.
 
+    Tries the HTTP API server first; falls back to direct Python execution
+    if the server is not reachable.
+
     Parameters
     ----------
     name : str
         Tool function name (e.g. "generate_terrain").
     arguments : str | dict
         JSON string or dict of arguments.
-
-    Returns
-    -------
-    Any
-        The tool's return value (dict from API or error dict).
     """
-    fn = _TOOL_MAP.get(name)
-    if fn is None:
-        return {"error": f"Unknown tool: {name}"}
     if isinstance(arguments, str):
         arguments = json.loads(arguments)
+
+    # Try HTTP API first
+    http_fn = _HTTP_MAP.get(name)
+    if http_fn is None:
+        return {"error": f"Unknown tool: {name}"}
+
     try:
-        return fn(**arguments)
+        return http_fn(**arguments)
+    except (requests.exceptions.ConnectionError,
+            requests.exceptions.HTTPError,
+            requests.exceptions.Timeout):
+        pass  # API not running or unhealthy — fall back to local
     except Exception as exc:
-        return {"error": str(exc)}
+        # Non-HTTP error — still try local before giving up
+        pass
+
+    # Local fallback
+    local_fn = _LOCAL_DISPATCH.get(name)
+    if local_fn:
+        try:
+            return local_fn(**arguments)
+        except Exception as exc:
+            return {"error": f"Local execution failed: {exc}"}
+
+    return {"error": f"Unknown tool: {name}"}
 
 
 # ---------------------------------------------------------------------------
-# OpenAI-compatible tool definitions (function-calling JSON schema)
+# OpenAI-compatible tool definitions
 # ---------------------------------------------------------------------------
 
 TOOLS: List[Dict[str, Any]] = [
@@ -235,12 +417,12 @@ TOOLS: List[Dict[str, Any]] = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "biome":     {"type": "string",  "enum": ["grassland","desert","snow","ocean","forest"], "description": "Terrain biome"},
-                    "width":     {"type": "integer", "default": 32, "description": "X size in voxels (4–128)"},
-                    "height":    {"type": "integer", "default": 32, "description": "Y size in voxels (4–128)"},
-                    "max_depth": {"type": "integer", "default": 12, "description": "Max terrain height (2–64)"},
-                    "seed":      {"type": "integer", "default": 0,  "description": "RNG seed for deterministic output"},
-                    "name":      {"type": "string",  "default": "terrain", "description": "Asset filename (no extension)"},
+                    "biome":     {"type": "string",  "enum": ["grassland","desert","snow","ocean","forest"]},
+                    "width":     {"type": "integer", "default": 32},
+                    "height":    {"type": "integer", "default": 32},
+                    "max_depth": {"type": "integer", "default": 12},
+                    "seed":      {"type": "integer", "default": 0},
+                    "name":      {"type": "string",  "default": "terrain"},
                 },
                 "required": [],
             },
@@ -255,9 +437,9 @@ TOOLS: List[Dict[str, Any]] = [
                 "type": "object",
                 "properties": {
                     "style":  {"type": "string",  "enum": ["modern","medieval","sci-fi","rustic","fantasy"]},
-                    "width":  {"type": "integer", "default": 8,   "description": "Building X footprint (4–32)"},
-                    "depth":  {"type": "integer", "default": 8,   "description": "Building Y footprint (4–32)"},
-                    "floors": {"type": "integer", "default": 3,   "description": "Number of floors (1–20)"},
+                    "width":  {"type": "integer", "default": 8},
+                    "depth":  {"type": "integer", "default": 8},
+                    "floors": {"type": "integer", "default": 3},
                     "seed":   {"type": "integer", "default": 0},
                     "name":   {"type": "string",  "default": "building"},
                 },
@@ -306,19 +488,18 @@ TOOLS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "build_scene",
-            "description": "Construct a VoxelForge scene file from a list of entity placements and lights.",
+            "description": "Construct a VoxelForge scene file from entity placements and lights.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "scene_name": {"type": "string", "description": "Name for the output scene file"},
+                    "scene_name": {"type": "string"},
                     "entities": {
                         "type": "array",
-                        "description": "List of entity placements",
                         "items": {
                             "type": "object",
                             "properties": {
                                 "name":     {"type": "string"},
-                                "asset":    {"type": "string", "description": "Relative path to .vox file"},
+                                "asset":    {"type": "string"},
                                 "position": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
                                 "rotation": {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3},
                             },
@@ -350,20 +531,20 @@ TOOLS: List[Dict[str, Any]] = [
         "function": {
             "name": "build_world",
             "description": (
-                "Build a COMPLETE game world in one call: generates terrain, buildings, "
-                "characters, props, and a fully assembled scene file. Use this for full game creation."
+                "Build a COMPLETE game world: terrain + buildings + characters + props + scene. "
+                "Use this for full autonomous game creation."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "name":           {"type": "string",  "description": "World name"},
+                    "name":           {"type": "string"},
                     "biome":          {"type": "string",  "enum": ["grassland","desert","snow","ocean","forest"]},
-                    "width":          {"type": "integer", "default": 64, "description": "World X size (16–256)"},
-                    "height":         {"type": "integer", "default": 64, "description": "World Y size (16–256)"},
-                    "buildings":      {"type": "integer", "default": 3,  "description": "Number of buildings (0–20)"},
+                    "width":          {"type": "integer", "default": 64},
+                    "height":         {"type": "integer", "default": 64},
+                    "buildings":      {"type": "integer", "default": 3},
                     "building_style": {"type": "string",  "default": "medieval"},
-                    "characters":     {"type": "integer", "default": 2,  "description": "Number of characters (0–20)"},
-                    "props":          {"type": "integer", "default": 5,  "description": "Number of random props (0–50)"},
+                    "characters":     {"type": "integer", "default": 2},
+                    "props":          {"type": "integer", "default": 5},
                     "seed":           {"type": "integer", "default": 0},
                 },
                 "required": ["name"],
@@ -374,11 +555,11 @@ TOOLS: List[Dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "list_assets",
-            "description": "List all generated .vox asset files. Optionally filter by subdir (terrain/buildings/characters/props).",
+            "description": "List all generated .vox asset files.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "subdir": {"type": "string", "default": "", "enum": ["","terrain","buildings","characters","props"]},
+                    "subdir": {"type": "string", "default": ""},
                 },
                 "required": [],
             },
