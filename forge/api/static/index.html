@@ -180,6 +180,52 @@
 
   </div>
 
+  <!-- ── Full Game Generator ── -->
+  <div class="card" style="margin-bottom:1.5rem">
+    <h2>🎮 Generate Complete Game</h2>
+    <p style="font-size:.8rem;color:var(--muted);margin-bottom:.5rem">
+      One click → level + player + enemies + Lua AI scripts + scene. Directly playable.
+    </p>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem">
+      <div>
+        <label>Game Title</label>
+        <input id="g-title" type="text" value="My VoxelForge Game">
+      </div>
+      <div>
+        <label>Genre</label>
+        <select id="g-genre">
+          <option>village</option><option>dungeon</option><option>space</option>
+          <option>fantasy</option><option>horror</option><option>arctic</option>
+        </select>
+      </div>
+      <div>
+        <label>Player Class</label>
+        <select id="g-class">
+          <option>warrior</option><option>mage</option>
+          <option>archer</option><option>rogue</option>
+        </select>
+      </div>
+      <div>
+        <label>Enemies</label>
+        <input id="g-enemies" type="number" value="3" min="0" max="10">
+      </div>
+      <div>
+        <label>Props</label>
+        <input id="g-props" type="number" value="6" min="0" max="20">
+      </div>
+      <div>
+        <label>Level Size</label>
+        <input id="g-size" type="number" value="40" min="16" max="96">
+      </div>
+    </div>
+    <input id="g-seed" type="number" value="0" style="display:none">
+    <button class="btn-primary" style="width:100%;justify-content:center" onclick="generateGame(this)">
+      <span class="spinner"></span>
+      <span class="label">🎮 Generate Full Game</span>
+    </button>
+    <div class="output" id="game-out">Ready.</div>
+  </div>
+
   <div class="grid2">
 
     <!-- ── Individual asset generator ── -->
@@ -408,6 +454,38 @@ async function generateAsset(btn) {
     loadStats(); loadAssets();
   } catch(e) {
     setOut('asset-out', e.message, true);
+  } finally {
+    setLoading(btn, false);
+  }
+}
+
+// ── Full game generator ───────────────────────────────────────────────────
+
+async function generateGame(btn) {
+  setLoading(btn, true);
+  setOut('game-out', '⏳ Generating game…');
+  try {
+    const data = await api('POST', '/game/generate', {
+      title:        document.getElementById('g-title').value,
+      genre:        document.getElementById('g-genre').value,
+      player_class: document.getElementById('g-class').value,
+      enemies:      parseInt(document.getElementById('g-enemies').value),
+      props:        parseInt(document.getElementById('g-props').value),
+      level_size:   parseInt(document.getElementById('g-size').value),
+      seed:         parseInt(document.getElementById('g-seed').value),
+    });
+    worldsGenerated++;
+    setOut('game-out',
+      `✅ Game: ${data.title}  (${data.genre})\n` +
+      `Assets:   ${data.asset_count}  Scripts: ${data.script_count}\n` +
+      `Entities: ${data.entity_count}\n` +
+      `Scene:    ${data.scene_path}\n\n` +
+      `▶ ${data.run_command}\n\n` +
+      `Manifest: ${data.manifest_path}`
+    );
+    loadStats(); loadAssets();
+  } catch(e) {
+    setOut('game-out', '❌ ' + e.message, true);
   } finally {
     setLoading(btn, false);
   }
