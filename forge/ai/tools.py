@@ -270,6 +270,29 @@ def _local_generate_dungeon(width=48, height=48, wall_height=3,
             "dimensions": [model.width, model.height, model.depth]}
 
 
+def _local_generate_game(title="VoxelForge Game", genre="village", theme="",
+                           player_class="warrior", enemies=3, props=6,
+                           level_size=48, seed=0, **_) -> Dict[str, Any]:
+    from ..voxel import Palette
+    from ..generators.game import GameGenerator
+    gen = GameGenerator(Palette.natural(), seed=seed,
+                         output_dir=_ASSETS_DIR)
+    manifest = gen.generate(title=title, genre=genre, theme=theme,
+                              player_class=player_class, enemies=enemies,
+                              props=props, level_size=level_size)
+    return {
+        "status":        "ok",
+        "title":         title,
+        "genre":         genre,
+        "scene_path":    _engine_rel(manifest["scene_path"]),
+        "manifest_path": _engine_rel(manifest["manifest_path"]),
+        "run_command":   manifest["run_command"],
+        "entity_count":  manifest["entity_count"],
+        "asset_count":   len(manifest["assets"]),
+        "script_count":  len(manifest["scripts"]),
+    }
+
+
 def _local_list_assets(subdir="", **_) -> Dict[str, Any]:
     import glob
     pattern = os.path.join(_ASSETS_DIR, subdir or "**", "*.vox")
@@ -292,6 +315,7 @@ _LOCAL_DISPATCH: Dict[str, Any] = {
     "generate_character": _local_generate_character,
     "generate_prop":      _local_generate_prop,
     "generate_dungeon":   _local_generate_dungeon,
+    "generate_game":      _local_generate_game,
     "build_scene":        _local_build_scene,
     "build_world":        _local_build_world,
     "list_assets":        _local_list_assets,
@@ -340,6 +364,17 @@ def generate_dungeon(width=48, height=48, wall_height=3,
                                      "seed": seed, "name": name})
 
 
+def generate_game(title="VoxelForge Game", genre="village", theme="",
+                   player_class="warrior", enemies=3, props=6,
+                   level_size=48, seed=0) -> Dict[str, Any]:
+    """Generate a complete playable mini-game (level + characters + scripts + scene)."""
+    return _post("/game/generate", {
+        "title": title, "genre": genre, "theme": theme,
+        "player_class": player_class, "enemies": enemies, "props": props,
+        "level_size": level_size, "seed": seed,
+    })
+
+
 def build_scene(scene_name, entities, lights=None,
                  background_color=None) -> Dict[str, Any]:
     """Construct a VoxelForge scene from entity and light placements."""
@@ -380,6 +415,7 @@ _HTTP_MAP = {
     "generate_character": generate_character,
     "generate_prop":      generate_prop,
     "generate_dungeon":   generate_dungeon,
+    "generate_game":      generate_game,
     "build_scene":        build_scene,
     "build_world":        build_world,
     "list_assets":        list_assets,
@@ -593,6 +629,31 @@ TOOLS: List[Dict[str, Any]] = [
                     "name":        {"type": "string",  "default": "dungeon"},
                 },
                 "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "generate_game",
+            "description": (
+                "Generate a COMPLETE, immediately playable mini-game in one call. "
+                "Creates level, player + enemies with Lua AI scripts, props, and a scene file. "
+                "Use this when you need a full game, not just individual assets."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title":        {"type": "string", "description": "Game title"},
+                    "genre":        {"type": "string", "enum": ["village","dungeon","space","fantasy","horror","arctic"]},
+                    "theme":        {"type": "string", "default": "", "description": "Optional sub-theme"},
+                    "player_class": {"type": "string", "enum": ["warrior","mage","archer","rogue"]},
+                    "enemies":      {"type": "integer", "default": 3, "description": "Number of enemies (0-10)"},
+                    "props":        {"type": "integer", "default": 6},
+                    "level_size":   {"type": "integer", "default": 48, "description": "Level footprint in voxels"},
+                    "seed":         {"type": "integer", "default": 0},
+                },
+                "required": ["title", "genre"],
             },
         },
     },

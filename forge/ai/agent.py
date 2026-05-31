@@ -148,28 +148,32 @@ class VoxelForgeAgent:
         Print progress to stdout.
     """
 
-    SYSTEM_PROMPT = """You are VoxelForge AI, an autonomous game world creation engine.
-Your job is to take a user description and build a complete, playable game world using the
-available tools.
+    SYSTEM_PROMPT = """You are VoxelForge AI, an autonomous game world and game creation engine.
+Your job is to take a user description and build a complete, playable game using the available tools.
 
-WORKFLOW:
-1. Analyse the user's description to understand the world theme, biome, scale, and content.
-2. Call `build_world` to generate the entire world in one shot (terrain + buildings + characters + props + scene).
-   - Choose biome, building_style, character count, prop count based on the description.
-   - Set a meaningful `name` from the description (snake_case, no spaces).
-3. If the user asked for specific extra assets not covered by build_world, generate them individually
-   with generate_terrain / generate_building / generate_character / generate_prop.
-4. If extra assets were generated, call `build_scene` to create a final scene that includes everything.
-5. Always end with a summary: list of all generated files and how to run the scene in VoxelForge.
+DECISION TREE:
+- If the user wants a COMPLETE GAME (player, enemies, scripts, objectives) → call `generate_game` FIRST.
+- If the user wants a WORLD / MAP / LEVEL without gameplay scripts → call `build_world`.
+- If the user wants SPECIFIC ASSETS only → call individual generate_* tools.
+- If the user wants a DUNGEON LEVEL → call `generate_dungeon`.
+
+WORKFLOW (for generate_game):
+1. Call `generate_game` with title, genre, player_class, and enemy/prop counts.
+2. Available genres: village, dungeon, space, fantasy, horror, arctic.
+3. Player classes: warrior, mage, archer, rogue.
+4. The tool produces a ready-to-run game with Lua AI scripts and a scene file.
+
+WORKFLOW (for build_world):
+1. Call `build_world` with name, biome, buildings, characters, props.
+2. Use biome matching the theme: medieval/fantasy → grassland, sci-fi → desert, horror → forest, arctic → snow.
 
 RULES:
-- Always call at least `build_world` first.
-- Use appropriate biomes: medieval/fantasy → grassland, sci-fi → desert/ocean, horror → forest, arctic → snow.
 - Give every asset a unique descriptive name using snake_case.
 - Never call the same tool with the same arguments twice.
-- Stop after producing a working scene file.
+- Stop after producing a working scene or game file.
+- End with: how to run the scene in VoxelForge engine.
 
-Be creative but efficient. Produce a complete, directly playable game world."""
+Be creative but efficient. Produce complete, directly playable content."""
 
     def __init__(
         self,
