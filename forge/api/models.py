@@ -157,6 +157,25 @@ class WorldBuildRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Agent request
+# ---------------------------------------------------------------------------
+
+class AgentRunRequest(BaseModel):
+    prompt:      str  = Field(..., description="Natural language world description")
+    direct_mode: bool = Field(True, description="Use keyword parser (no LLM). Set False to use OPENAI_API_KEY.")
+    model:       str  = Field("gpt-4o", description="LLM model (only used when direct_mode=False)")
+
+
+class AgentRunResponse(BaseModel):
+    status:        str
+    scene_path:    str
+    asset_paths:   List[str]
+    entity_count:  int
+    elapsed_seconds: float
+    mode:          str
+
+
+# ---------------------------------------------------------------------------
 # Responses
 # ---------------------------------------------------------------------------
 

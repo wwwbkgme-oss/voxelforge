@@ -43,6 +43,8 @@ from ..generators import (
     TerrainGenerator,
 )
 from .models import (
+    AgentRunRequest,
+    AgentRunResponse,
     AssetListResponse,
     AssetResponse,
     BuildingRequest,
@@ -491,6 +493,44 @@ async def build_world(req: WorldBuildRequest) -> WorldResponse:
     except Exception as exc:
         tb = traceback.format_exc()
         raise HTTPException(status_code=500, detail=f"{exc}\n{tb}") from exc
+
+
+# ---------------------------------------------------------------------------
+# Agent endpoint — run the autonomous AI agent server-side
+# ---------------------------------------------------------------------------
+
+@app.post("/agent/run", response_model=AgentRunResponse, tags=["agent"])
+async def run_agent(req: AgentRunRequest) -> AgentRunResponse:
+    """
+    Run the VoxelForge autonomous agent with a text prompt.
+
+    The agent plans and generates a complete game world (terrain, buildings,
+    characters, props, scene file) from the given description.
+
+    Set ``direct_mode=true`` (default) for instant generation with the
+    keyword parser — no LLM or API key needed.
+
+    Set ``direct_mode=false`` to use an LLM (requires ``OPENAI_API_KEY``
+    to be set in the server environment).
+    """
+    try:
+        from ..ai.agent import VoxelForgeAgent
+        agent  = VoxelForgeAgent(
+            model       = req.model,
+            direct_mode = req.direct_mode,
+            verbose     = False,
+        )
+        result = agent.run(req.prompt)
+        return AgentRunResponse(
+            status          = "ok",
+            scene_path      = result.get("scene_path", ""),
+            asset_paths     = result.get("asset_paths", []),
+            entity_count    = result.get("entity_count", 0),
+            elapsed_seconds = result.get("elapsed_seconds", 0.0),
+            mode            = result.get("mode", "direct"),
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 # ---------------------------------------------------------------------------

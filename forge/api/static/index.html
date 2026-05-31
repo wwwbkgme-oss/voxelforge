@@ -188,7 +188,7 @@
       <label>Type</label>
       <select id="a-type" onchange="updateAssetForm()">
         <option>terrain</option><option>building</option>
-        <option>character</option><option>prop</option>
+        <option>character</option><option>prop</option><option>dungeon</option>
       </select>
       <label>Name</label>
       <input id="a-name" type="text" value="asset_1">
@@ -226,6 +226,15 @@
           <option>tree</option><option>crate</option><option>barrel</option>
           <option>lamp_post</option><option>rock</option><option>chest</option><option>mushroom</option>
         </select>
+      </div>
+      <div id="a-dungeon-opts" style="display:none">
+        <label>Dungeon Style</label>
+        <select id="a-dstyle">
+          <option>stone</option><option>dungeon</option>
+          <option>cave</option><option>ice</option>
+        </select>
+        <label>Wall Height</label>
+        <input id="a-wallh" type="number" value="3" min="1" max="8">
       </div>
 
       <button class="btn-outline" onclick="generateAsset(this)">
@@ -336,25 +345,25 @@ async function runAgent(btn) {
   if (!prompt) { alert('Enter a prompt first'); return; }
   const mode = document.getElementById('agent-mode').value;
   setLoading(btn, true);
-  setOut('agent-out', 'Running agent…');
+  setOut('agent-out', '⏳ Agent running…');
   try {
-    // Parse intent via direct world build
-    const sz = 64;
-    const words = prompt.toLowerCase().split(/\s+/);
-    const biomes = ['grassland','desert','snow','ocean','forest'];
-    const biome  = biomes.find(b => words.includes(b)) || 'grassland';
-    const name   = words.slice(0,3).filter(w=>w.length>3).join('_') || 'ai_world';
-    const data = await api('POST', '/world/build', {
-      name, biome, width: sz, height: sz,
-      buildings: 3, characters: 2, props: 5, seed: 0,
+    const data = await api('POST', '/agent/run', {
+      prompt,
+      direct_mode: mode === 'direct',
     });
     worldsGenerated++;
     setOut('agent-out',
-      `World: ${data.world_name}\nScene: ${data.scene_path}\nAssets: ${data.asset_paths.length}\nEntities: ${data.entity_count}\n\nEngine command:\n  cd engine && ./voxelforge --scene ../${data.scene_path}`
+      `✅ Done in ${data.elapsed_seconds}s\n` +
+      `Mode:     ${data.mode}\n` +
+      `Scene:    ${data.scene_path}\n` +
+      `Assets:   ${data.asset_paths.length}\n` +
+      `Entities: ${data.entity_count}\n\n` +
+      `Engine command:\n  cd engine && ./voxelforge --scene ../${data.scene_path}\n\n` +
+      `Headless screenshot:\n  cd engine && ./voxelforge --headless --screenshot ../preview --scene ../${data.scene_path}`
     );
     loadStats(); loadAssets();
   } catch(e) {
-    setOut('agent-out', e.message, true);
+    setOut('agent-out', '❌ ' + e.message, true);
   } finally {
     setLoading(btn, false);
   }
@@ -368,6 +377,7 @@ function updateAssetForm() {
   document.getElementById('a-building-opts').style.display = t==='building'  ? '' : 'none';
   document.getElementById('a-char-opts').style.display     = t==='character' ? '' : 'none';
   document.getElementById('a-prop-opts').style.display     = t==='prop'      ? '' : 'none';
+  document.getElementById('a-dungeon-opts').style.display  = t==='dungeon'   ? '' : 'none';
 }
 
 async function generateAsset(btn) {
@@ -384,6 +394,11 @@ async function generateAsset(btn) {
              floors: parseInt(document.getElementById('a-floors').value), seed, name };
   } else if (type === 'character') {
     body = { class_type: document.getElementById('a-class').value, seed, name };
+  } else if (type === 'dungeon') {
+    const w = parseInt(document.getElementById('a-width').value);
+    body = { style: document.getElementById('a-dstyle').value,
+             wall_height: parseInt(document.getElementById('a-wallh').value),
+             width: w, height: w, seed, name };
   } else {
     body = { prop_type: document.getElementById('a-prop').value, seed, name };
   }
