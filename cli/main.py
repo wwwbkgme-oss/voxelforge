@@ -19,6 +19,7 @@ import argparse
 import json
 import os
 import sys
+import time
 
 
 # ---------------------------------------------------------------------------
@@ -137,7 +138,6 @@ def cmd_agent(args: argparse.Namespace) -> None:
 
 def cmd_scene(args: argparse.Namespace) -> None:
     """Scene utilities."""
-    from forge.scene import Scene
     import glob
 
     if args.action == "list":
@@ -252,7 +252,7 @@ def cmd_game(args: argparse.Namespace) -> None:
         props        = args.props,
         level_size   = args.level_size,
     )
-    print(f"Game generated!")
+    print("Game generated!")
     print(f"  Scene:    {manifest['scene_path']}")
     print(f"  Assets:   {len(manifest['assets'])}")
     print(f"  Scripts:  {len(manifest['scripts'])}")
@@ -270,7 +270,7 @@ def cmd_ai_sprite(args: argparse.Namespace) -> None:
             name        = args.name,
             frame_count = args.frames,
         )
-        print(f"Animated sprite saved:")
+        print("Animated sprite saved:")
         print(f"  Spritesheet : {result.spritesheet}")
         print(f"  GIF         : {result.gif_path}")
         print(f"  Frames      : {result.frame_count}")
@@ -474,7 +474,6 @@ def cmd_serve(args: argparse.Namespace) -> None:
                 print(f"[serve] Auto-selected model: {model}")
                 break
         if not model:
-            recs_str = ", ".join(recs[:3])
             print(f"No model downloaded. Download one first:\n  voxelforge model download {recs[:1][0] if recs else 'llama3.2-3b'}")
             sys.exit(1)
 

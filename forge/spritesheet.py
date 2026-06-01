@@ -38,13 +38,10 @@ Usage
 from __future__ import annotations
 
 import base64
-import io
 import os
-import re
-import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import requests
 
@@ -55,7 +52,7 @@ except ImportError:
     _PIL = False
 
 try:
-    import numpy as np   # type: ignore
+    import numpy as np   # type: ignore  # noqa: F401
     _NP = True
 except ImportError:
     _NP = False
@@ -346,7 +343,7 @@ class BackgroundRemover:
             result = rembg_remove(img, session=session, alpha_matting=False)
             result.save(dst, "PNG")
             return dst
-        except Exception as exc:
+        except Exception:
             # Fallback to chroma-key on rembg failure
             return self._chromakey_remove(src, dst, (0, 177, 64), 60)
 
@@ -746,7 +743,7 @@ class SpriteSheetForge:
         if self._or_key:
             try:
                 return self._openrouter_image(prompt, name, spec)
-            except Exception as exc:
+            except Exception:
                 pass
         # Try OpenAI
         if self._oai_key:

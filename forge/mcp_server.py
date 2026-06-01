@@ -51,7 +51,7 @@ import json
 import os
 import sys
 import traceback
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 
 # ---------------------------------------------------------------------------

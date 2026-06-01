@@ -80,7 +80,7 @@ class PropGenerator:
 
         if variant == "pine":
             # Narrow pine tree 5×5×14
-            m = VoxelModel.empty(5, 5, 14, self.palette, name=f"tree_pine")
+            m = VoxelModel.empty(5, 5, 14, self.palette, name="tree_pine")
             # Trunk
             for z in range(5):
                 m.set(2, 2, z, trunk_c)
@@ -161,7 +161,7 @@ class PropGenerator:
     def _rock(self, size: int = 5, **_) -> VoxelModel:
         rock_c = self._c(41, 60)
         m = VoxelModel.empty(size, size, size//2+1, self.palette, name="rock")
-        cx, cy, cz = size//2, size//2, 0
+        cx, cy = size//2, size//2
         for x in range(size):
             for y in range(size):
                 for z in range(m.depth):

@@ -33,12 +33,11 @@ from __future__ import annotations
 import json
 import os
 import random
-from typing import Any, Dict, List
+from typing import Any, Dict
 
-from ..voxel import Palette, VoxelModel
+from ..voxel import Palette
 from ..scene import Scene
 from .terrain   import TerrainGenerator
-from .buildings import BuildingGenerator
 from .characters import CharacterGenerator
 from .props      import PropGenerator
 from .dungeon    import DungeonGenerator

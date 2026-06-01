@@ -42,19 +42,15 @@ from __future__ import annotations
 
 import base64
 import io
-import json
 import os
-import struct
 import time
-import zlib
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import List, Optional, Tuple
 
 import requests
 
 try:
-    from PIL import Image, ImageDraw, ImageFilter  # type: ignore
+    from PIL import Image, ImageDraw  # type: ignore
     _PIL_AVAILABLE = True
 except ImportError:
     _PIL_AVAILABLE = False
@@ -792,10 +788,8 @@ def _make_procedural_frames(
     if not _PIL_AVAILABLE or not os.path.isfile(ref_path):
         return [ref_path] * n
 
-    import random
     import numpy as np
 
-    rng   = random.Random(hash(name) & 0xFFFFFF)
     ref   = Image.open(ref_path).convert("RGBA")
     arr   = np.array(ref, dtype=np.float32)
     paths: List[str] = []

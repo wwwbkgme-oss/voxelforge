@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass
-from typing import Tuple
 
 from ..voxel import VoxelModel, Palette
 
@@ -154,7 +153,6 @@ class BuildingGenerator:
                             model.set(x, y, zz, wall_c)
 
             # --- Windows on this floor ---
-            win_z = z_base + 1
             if z + 1 < s.floor_height - 1:
                 pass  # window fits
             self._place_windows(model, floor, z_base, s, width, depth)

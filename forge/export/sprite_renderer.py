@@ -29,11 +29,9 @@ Example
 
 from __future__ import annotations
 
-import math
 import os
 from typing import Optional, Tuple
 
-import numpy as np
 
 try:
     from PIL import Image, ImageDraw   # type: ignore
@@ -41,7 +39,7 @@ try:
 except ImportError:
     _PIL_AVAILABLE = False
 
-from ..voxel import VoxelModel, Palette
+from ..voxel import VoxelModel
 
 
 # ---------------------------------------------------------------------------

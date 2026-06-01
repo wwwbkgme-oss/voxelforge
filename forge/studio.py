@@ -26,7 +26,7 @@ import json
 import os
 import re
 from datetime import date
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 
 # ---------------------------------------------------------------------------
@@ -552,7 +552,7 @@ class LoreGenerator:
         self.genre      = genre
 
     def generate(self) -> str:
-        l     = _LORE_ITEMS.get(self.genre, _LORE_ITEMS["village"])
+        lore  = _LORE_ITEMS.get(self.genre, _LORE_ITEMS["village"])
         gt    = _GENRE_TONE.get(self.genre, _GENRE_TONE["village"])
         today = date.today().isoformat()
 
@@ -565,8 +565,8 @@ class LoreGenerator:
 
 ## The World
 
-{self.world_name} is {gt['setting']}, a place of {l['tone_words'].split(',')[0]} beauty
-and {l['tone_words'].split(',')[-1].strip()} danger.
+{self.world_name} is {gt['setting']}, a place of {lore['tone_words'].split(',')[0]} beauty
+and {lore['tone_words'].split(',')[-1].strip()} danger.
 Once prosperous, it now harbours a threat that only a lone hero can face.
 
 The world is rendered in VoxelForge's isometric pixel-art style —
@@ -574,21 +574,21 @@ small, expressive voxel figures moving through a hand-crafted voxel landscape.
 
 ## The Mission
 
-The player must collect **{l['collectible']}** scattered across the map.
-Their motivation: **{l['motivation']}**.
+The player must collect **{lore['collectible']}** scattered across the map.
+Their motivation: **{lore['motivation']}**.
 
 ## Flavour Text
 
 | Moment | Text |
 |--------|------|
-| Game start | *"{l['flavor_start']}"* |
-| Chest found | *"{l['flavor_chest']}"* |
-| Enemy spotted | *"{l['flavor_enemy']}"* |
-| Win | *"{l['win']}"* |
+| Game start | *"{lore['flavor_start']}"* |
+| Chest found | *"{lore['flavor_chest']}"* |
+| Enemy spotted | *"{lore['flavor_enemy']}"* |
+| Win | *"{lore['win']}"* |
 
 ## Tone Words
 
-`{l['tone_words']}`
+`{lore['tone_words']}`
 
 ## Enemy Faction
 
@@ -598,7 +598,7 @@ aggression radius, and they become relentless pursuers.
 
 ## World Collectibles
 
-The **{l['collectible']}** are the game's macguffins.
+The **{lore['collectible']}** are the game's macguffins.
 Each one brings the player closer to the win state.
 Each one is guarded — directly or indirectly — by the enemies.
 """

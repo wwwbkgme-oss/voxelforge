@@ -30,10 +30,10 @@ from typing import Any, Dict, List
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from ..voxel import Palette, VoxelModel
+from ..voxel import Palette
 from ..scene import Scene
 from ..generators import (
     BuildingGenerator,
@@ -54,7 +54,6 @@ from .models import (
     BuildingRequest,
     CharacterRequest,
     DungeonRequest,
-    ErrorResponse,
     GameGenerateRequest,
     GameGenerateResponse,
     HTML5GameRequest,
@@ -978,7 +977,7 @@ async def start_inference(req: InferenceStartRequest) -> InferenceStartResponse:
     n_gpu_layers: 0 = CPU only, -1 = all layers on GPU, N = partial offload
     """
     try:
-        from ..local_llm import InferenceServer, ModelManager, detect_optimal_threads
+        from ..local_llm import detect_optimal_threads
         srv = _get_inference_server()
         if req.threads == 0:
             threads = detect_optimal_threads()
@@ -1011,7 +1010,6 @@ async def stop_inference() -> Dict[str, Any]:
 async def inference_status() -> InferenceStatusResponse:
     """Check whether the local inference server is running."""
     srv = _get_inference_server()
-    h   = srv.health()
     return InferenceStatusResponse(
         running  = srv.running,
         model_id = srv._model_id,

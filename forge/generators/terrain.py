@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import math
 import random
-from typing import Tuple
 
 import numpy as np
 
@@ -42,9 +41,12 @@ def _lerp(a: float, b: float, t: float) -> float:
 
 def _grad(h: int, x: float, y: float) -> float:
     h &= 3
-    if h == 0: return  x + y
-    if h == 1: return -x + y
-    if h == 2: return  x - y
+    if h == 0:
+        return x + y
+    if h == 1:
+        return -x + y
+    if h == 2:
+        return x - y
     return -x - y
 
 

@@ -25,7 +25,7 @@ Example
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
 from ..voxel import VoxelModel, Palette
@@ -54,7 +54,10 @@ class Room:
 
 @dataclass
 class BSPNode:
-    x:  int; y: int; w: int; h: int
+    x: int
+    y: int
+    w: int
+    h: int
     left:  Optional["BSPNode"] = None
     right: Optional["BSPNode"] = None
     room:  Optional[Room]      = None
@@ -67,10 +70,12 @@ class BSPNode:
             return self.room
         if self.left:
             lr = self.left.get_room()
-            if lr: return lr
+            if lr:
+                return lr
         if self.right:
             rr = self.right.get_room()
-            if rr: return rr
+            if rr:
+                return rr
         return None
 
 
@@ -108,8 +113,10 @@ def _place_rooms(node: BSPNode, rng: random.Random,
         node.room = Room(rx, ry, rw, rh)
         rooms.append(node.room)
     else:
-        if node.left:  _place_rooms(node.left,  rng, rooms, min_pad)
-        if node.right: _place_rooms(node.right, rng, rooms, min_pad)
+        if node.left:
+            _place_rooms(node.left, rng, rooms, min_pad)
+        if node.right:
+            _place_rooms(node.right, rng, rooms, min_pad)
 
 
 def _connect_rooms(node: BSPNode, corridors: List[Tuple]) -> None:
@@ -120,8 +127,10 @@ def _connect_rooms(node: BSPNode, corridors: List[Tuple]) -> None:
             rr = node.right.get_room()
             if lr and rr:
                 corridors.append((lr, rr))
-        if node.left:  _connect_rooms(node.left,  corridors)
-        if node.right: _connect_rooms(node.right, corridors)
+        if node.left:
+            _connect_rooms(node.left, corridors)
+        if node.right:
+            _connect_rooms(node.right, corridors)
 
 
 # ---------------------------------------------------------------------------
@@ -169,7 +178,6 @@ class DungeonGenerator:
         colors = _STYLE_COLORS.get(style, _STYLE_COLORS["stone"])
         floor_c = self._rng.randint(*colors["floor"])
         wall_c  = self._rng.randint(*colors["wall"])
-        ceil_c  = self._rng.randint(*colors["ceiling"])
 
         # ---- Fill entire area with solid rock ----
         for x in range(width):
@@ -225,19 +233,23 @@ class DungeonGenerator:
         # Horizontal segment
         for x in range(min(x1, x2), max(x1, x2) + 1):
             model.set(x, y1, 0, floor_c)
-            for z in range(1, wall_h): model.set(x, y1, z, 0)
+            for z in range(1, wall_h):
+                model.set(x, y1, z, 0)
             # 1-wide corridor
             if 0 < y1 + 1 < model.height:
                 model.set(x, y1 + 1, 0, floor_c)
-                for z in range(1, wall_h): model.set(x, y1 + 1, z, 0)
+                for z in range(1, wall_h):
+                    model.set(x, y1 + 1, z, 0)
 
         # Vertical segment
         for y in range(min(y1, y2), max(y1, y2) + 1):
             model.set(x2, y, 0, floor_c)
-            for z in range(1, wall_h): model.set(x2, y, z, 0)
+            for z in range(1, wall_h):
+                model.set(x2, y, z, 0)
             if 0 < x2 + 1 < model.width:
                 model.set(x2 + 1, y, 0, floor_c)
-                for z in range(1, wall_h): model.set(x2 + 1, y, z, 0)
+                for z in range(1, wall_h):
+                    model.set(x2 + 1, y, z, 0)
 
 
 # ---------------------------------------------------------------------------

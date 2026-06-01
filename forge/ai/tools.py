@@ -451,7 +451,7 @@ def call_tool(name: str, arguments: str | Dict[str, Any]) -> Any:
             requests.exceptions.HTTPError,
             requests.exceptions.Timeout):
         pass  # API not running or unhealthy — fall back to local
-    except Exception as exc:
+    except Exception:
         # Non-HTTP error — still try local before giving up
         pass
 

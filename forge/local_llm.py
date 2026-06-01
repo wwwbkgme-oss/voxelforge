@@ -25,7 +25,6 @@ From Python:
 from __future__ import annotations
 
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -561,7 +560,7 @@ class InferenceServer:
 
     def health(self) -> Dict[str, Any]:
         try:
-            resp = requests.get(f"{self.base_url}/health", timeout=3)
+            requests.get(f"{self.base_url}/health", timeout=3)
             return {"status": "ok", "model": self._model_id, "port": self.port}
         except Exception:
             return {"status": "offline", "model": "", "port": self.port}

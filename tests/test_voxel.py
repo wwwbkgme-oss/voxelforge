@@ -3,10 +3,7 @@ Tests for forge.voxel — VoxelModel, Palette, .vox I/O
 """
 
 import os
-import struct
-import tempfile
 
-import numpy as np
 import pytest
 
 from forge.voxel import Palette, VoxelModel, save_multi_vox

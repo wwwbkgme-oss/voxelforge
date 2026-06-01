@@ -36,12 +36,10 @@ from __future__ import annotations
 import json
 import os
 import re
-import time
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .llm_router import LLMRouter, get_router, llm
+from .llm_router import LLMRouter, get_router
 
 
 # ---------------------------------------------------------------------------
@@ -312,12 +310,18 @@ class HTML5GameGenerator:
         """Quick sanity checks on the generated HTML."""
         issues = []
         h = html.lower()
-        if "<!doctype" not in h:       issues.append("Missing DOCTYPE")
-        if "<html"     not in h:       issues.append("Missing <html> tag")
-        if "</html>"   not in h:       issues.append("Missing </html> closing tag")
-        if "<script"   not in h:       issues.append("No JavaScript found")
-        if "</script>" not in h:       issues.append("Unclosed <script> tag")
-        if len(html)   < 500:          issues.append(f"Output too short ({len(html)} chars)")
+        if "<!doctype" not in h:
+            issues.append("Missing DOCTYPE")
+        if "<html" not in h:
+            issues.append("Missing <html> tag")
+        if "</html>" not in h:
+            issues.append("Missing </html> closing tag")
+        if "<script" not in h:
+            issues.append("No JavaScript found")
+        if "</script>" not in h:
+            issues.append("Unclosed <script> tag")
+        if len(html) < 500:
+            issues.append(f"Output too short ({len(html)} chars)")
         return (len(issues) == 0), issues
 
     def _fallback_game(self, title: str, genre: str, description: str) -> str:
@@ -582,8 +586,7 @@ class AssetPipeline:
         -------
         GameAssetPack
         """
-        import re as _re, random
-        rng  = random.Random(seed + hash(theme) % 100000)
+        import re as _re
         slug = _re.sub(r"[^\w]", "_", theme.lower())[:20]
         pack_dir = os.path.join(self.output_dir, slug)
         os.makedirs(pack_dir, exist_ok=True)

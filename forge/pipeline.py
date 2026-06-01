@@ -38,7 +38,7 @@ import os
 import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 
 # ---------------------------------------------------------------------------
@@ -667,10 +667,10 @@ Respond with JSON only:
         return DesignPhaseResult(
             gdd_path       = gdd_path,
             pillars        = pillars[:3],
-            core_loop      = f"Explore → Encounter → Overcome → Reward (30-second loop)",
+            core_loop      = "Explore → Encounter → Overcome → Reward (30-second loop)",
             mechanics      = ["WASD movement", "E interact", "WASD+Space combat"],
             art_style      = "Isometric voxel pixel art (VoxelForge engine)",
-            tech_stack     = f"VoxelForge C engine + Python forge package",
+            tech_stack     = "VoxelForge C engine + Python forge package",
             milestones     = milestones,
             analytics_plan = analytics_plan,
         )
